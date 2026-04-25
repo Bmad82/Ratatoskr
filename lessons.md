@@ -206,6 +206,39 @@ Universelle Erkenntnisse: https://github.com/Bmad82/Claude/lessons/
 - Callback-Spoofing in Gruppen: TG validiert nicht, wer Inline-Button klickt|Bot muss validieren|Vor P162 nur Admin-DM (implizit sicher)|Mit `requester_user_id` jetzt für In-Group-Buttons vorbereitet|Erlaubte Klicker: `{admin_chat_id, requester_user_id}`|String-Vergleich (TG `from.id` int, Config oft String)
 - `message_thread_id` muss durchgereicht werden, nicht nur extrahiert|Forum-Topics verlieren sonst Kontext (Antwort im General statt Thread)|`extract_message_info()` exposed Feld|ALLE `send_telegram_message`-Calls in `router.py` reichen als kwarg durch|Pattern: `message_thread_id=info.get("message_thread_id")` immer mitgeben|TG ignoriert wenn None → nur truthy ins Payload
 
+## Token-Effizienz bei Doku-Reads (P163)
+- Keine rituellen File-Reads|`SUPERVISOR_ZERBERUS.md`/`lessons.md`/`CLAUDE_ZERBERUS.md` werden via CLAUDE.md schon in den Kontext geladen|Re-Read = 2-4k Token verschwendet pro Patch
+- Regel: Datei nur lesen wenn (a) NICHT im Kontext sichtbar ODER (b) man sie direkt danach schreiben will|„Lies alles nochmal als Sicherheit" ist kein guter Grund
+- Doku-Updates bleiben Pflicht|aber am Patch-Ende|EIN Read→Write-Zyklus pro Datei|kein separater Read am Anfang + Write am Ende
+- Neue Einträge in CLAUDE_ZERBERUS.md + lessons.md IMMER im Bibel-Fibel-Format (Pipes|Stichpunkte|ArtikelWeg)|sonst zerfasert die in P163 gewonnene Kompression wieder
+
+## Intent-Router via JSON-Header (P164)
+- Architektur-Entscheidung: Intent kommt vom Haupt-LLM via JSON-Header in der eigenen Antwort, NICHT via Regex/Classifier|Whisper-Transkriptionsfehler machen Regex unbrauchbar|Extra-Classifier-Call verdoppelt Latenz
+- Format: `{"intent":"CHAT|CODE|FILE|SEARCH|IMAGE|ADMIN", "effort":1-5, "needs_hitl":bool}`|allererste Zeile, optional in ```json-Fence|Body folgt darunter
+- Parser [`core/intent_parser.py`](zerberus/core/intent_parser.py): Brace-Counter statt naivem `[^}]+`-Regex (Header mit Sonderzeichen)|Robustheit-Garantien: kein Header→CHAT/3/false+Body=Original, kaputtes JSON→Default+Warning, Unbekannt-Intent→CHAT, effort außerhalb 1-5→geclampt, non-numeric effort→3, JSON-Array statt Objekt→kein Header
+- `INTENT_INSTRUCTION` in [`bot.py`](zerberus/modules/telegram/bot.py)|wird via `build_huginn_system_prompt(persona)` an Persona angehängt|Persona darf leer sein (User-Opt-Out), Intent-Block bleibt Pflicht
+- Guard sieht IMMER `parsed.body` (ohne Header)|sonst meldet Mistral Small den JSON-Header als Halluzination|User sieht ebenfalls `parsed.body` ohne Header
+- Edge-Case: LLM liefert nur Header ohne Body → Roh-Antwort senden (Header inklusive)|hässlich aber besser als leere TG-Nachricht|in Praxis selten
+- HitL-Policy [`core/hitl_policy.py`](zerberus/core/hitl_policy.py): NEVER_HITL={CHAT,SEARCH,IMAGE} überstimmt LLM `needs_hitl=true` (K5-Schutz gegen Effort-Inflation)|BUTTON_REQUIRED={CODE,FILE,ADMIN} braucht Inline-Keyboard|ADMIN erzwingt HitL auch bei `needs_hitl=false` (K6-Schutz gegen jailbroken LLM)|`button` heißt ✅/❌ Inline-Keyboard, NIE „antworte 'ja' im Chat"
+- Aktueller Stand P164: Policy evaluiert + loggt + Admin-DM-Hinweis|echter Button-Flow für CODE/FILE/ADMIN-Aktionen folgt mit Phase D (Sandbox/Code-Exec)|Effort-Score ebenfalls nur geloggt (Datengrundlage Phase C Aufwands-Kalibrierung)
+- Gruppen-Einwurf-Filter: autonome Antworten nur bei {CHAT,SEARCH,IMAGE}|CODE/FILE/ADMIN unterdrückt|Bot darf in Gruppen nicht autonom Code ausführen
+- Logging-Tags: `[INTENT-164]` (Parser+Router), `[EFFORT-164]` (Effort-Bucketing low/mid/high), `[HITL-POLICY-164]` (Policy-Decisions)
+
+## Sync-Pflicht nach jedem Push (P164)
+- Coda-Setup pusht zuverlässig nach Zerberus, vergisst aber `sync_repos.ps1`|Ratatoskr+Claude-Repo driften unbemerkt
+- Regel: Sync ist LETZTER Schritt jedes Patches|Patch gilt erst als abgeschlossen wenn alle 3 Repos synchron|nicht „am Session-Ende" oder „nach 5 Patches"
+- Wenn Claude Code Sync nicht ausführen kann (Umgebung): EXPLIZIT melden „⚠️ sync_repos.ps1 nicht ausgeführt — bitte manuell nachholen"|stillschweigendes Überspringen NICHT zulässig
+
+## Rate-Limiting + Graceful Degradation (P163)
+- Per-User-Limit gegen Telegram-Spam: 10 msg/min/User|Cooldown 60s|InMemory-Singleton in [`core/rate_limiter.py`](zerberus/core/rate_limiter.py) mit Interface `RateLimiter` (Rosa-Skelett für Redis-Variante) + `InMemoryRateLimiter` (Huginn-jetzt)|`first_rejection`-Flag liefert genau EIN „Sachte, Keule"-Reply, danach still ignorieren
+- Sliding-Window pro User: nur Timestamps der letzten 60s halten|`cleanup()` entfernt Buckets nach 5min Inaktivität|Test-Reset via Modul-Singleton-Reset (`rate_limiter._rate_limiter = None`)
+- Rate-Limit-Check in `process_update()` GANZ oben (nach Update-Typ-Filter, vor Sanitizer/Manager)|nur für `message`-Updates, nicht für `callback_query`|`user_id` aus `message.from.id`
+- Guard-Fail-Policy konfigurierbar: `security.guard_fail_policy` ∈ {`allow`,`block`,`degrade`}|Default `allow` (Huginn-Modus, Antwort durchlassen + Log-Warnung)|`block` blockiert mit User-Hinweis|`degrade` reserviert für lokales Modell (Ollama-Future)|`_run_guard()` returnt `{"verdict": "ERROR"}` bei Fail → router prüft Policy
+- OpenRouter-Retry mit Backoff: nur bei 429/503/„rate"|2s/4s/8s exponentiell|max 3 Versuche|400/401/etc. NICHT retryen (Bad Request bleibt Bad Request)|Nach Erschöpfung: User-Fallback „Meine Kristallkugel ist gerade trüb."
+- Ausgangs-Throttle pro Chat in `bot.py`: `send_telegram_message_throttled` mit 15 msg/min/Chat (konservativ unter TG-Limit 20/min/Gruppe)|wartet via `asyncio.sleep` statt Drop|nur für autonome Gruppen-Einwürfe nötig (DMs nicht limitiert)|Modul-Singleton `_outgoing_timestamps` als defaultdict
+- Config-Keys VORBEREITET, nicht aktiv gelesen: `limits.per_user_rpm`/`limits.cooldown_seconds`/`security.guard_fail_policy` in `config.yaml`|aktives Reading mit Config-Refactor Phase B|jetzige Defaults im Code (max_rpm=10, cooldown=60, fail_policy="allow")
+- Logging-Tags: `[RATELIMIT-163]` (rate-limiter) + `[HUGINN-163]` (router/bot)
+
 ## Mega-Patch-Erkenntnisse (Sessions 122-152, 2026-04-23/24)
 
 ### Effizienz

@@ -366,4 +366,4 @@ Chaos-Payloads. Patch 100 ergänzt `TestJavaScriptIntegrity` (Playwright
 
 ---
 
-*Zerberus Pro 4.0 – Stand: 2026-04-25, Patch 163 (Bibel-Fibel-Kompression CLAUDE_ZERBERUS.md + lessons.md)*
+*Zerberus Pro 4.0 – Stand: 2026-04-25, Patch 164 (Intent-Router via JSON-Header + HitL-Policy + Sync-Pflicht-Fix, Phase-B-Auftakt)*
