@@ -295,7 +295,7 @@
 - Vollständige Doku: `docs/PROJEKTDOKUMENTATION.md`
 - [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur-Änderungen aktualisieren|hängt am Projektstand|wenn SUPERVISOR aktualisiert wird, wird diese Datei AUCH aktualisiert|Inhalt = aktueller Zustand (KEINE Patch-Historie)|natürliche Sprache für RAG-Chunking|Spiegel-Kopie [`docs/RAG Testdokumente/huginn_kennt_zerberus.md`](docs/RAG%20Testdokumente/huginn_kennt_zerberus.md) parallel mitziehen|nach Update Chris-Upload via `curl -u Chris:... -F file=@docs/huginn_kennt_zerberus.md -F category=system http://localhost:5000/hel/admin/rag/upload`|`category=system` ist Pflicht (P178-Filter)
 
-## Auto-Test-Policy (P165)
+## Auto-Test-Policy (P165, verschaerft P213-pre-6)
 - GRUNDSATZ: Alles was Coda testen kann → Coda testet|Mensch nur für Untestbares
 - CODA TESTET:
   - Unit/Integration-Tests (pytest)|API-Calls gegen echte Services (OpenRouter/Telegram/Whisper)
@@ -303,6 +303,7 @@
   - Doku-Konsistenz (Patch-Nummern|Datei-Referenzen|tote Links|README-Footer)
   - Regressions-Sweep nach jedem Patch|Import/AST-Checks|Log-Tag-Konsistenz
   - Live-Validation-Scripts in `scripts/` (wie `validate_intent_router.py`)
+  - **System-Verhaltens-Tests (Integration-Layer, P213-pre-6)** — Server starten via `start_stable.bat` (kein Reload-Watcher), echten Endpoint/Lookup aufrufen, Antwort gegen Erwartung pruefen. Nicht "der Code laeuft korrekt", sondern "das System liefert das richtige Ergebnis"
 - MENSCH TESTET (nicht delegierbar):
   - UI-Rendering auf echtem Gerät (iPhone/Android)|Touch-Feedback|visuelles Layout
   - Telegram-Gruppen-Dynamik mit echten Usern (Forwards|Edits|Multi-User)
@@ -312,6 +313,16 @@
 - LIVE-VALIDATION: Bei neuen Features die externe APIs nutzen → Validation-Script in `scripts/` anlegen + ausführen
 - DOKU-CHECKER: `scripts/check_docs_consistency.py` (P165) prüft Patch-Nummer-Sync|Tote Links|Log-Tag-Konsistenz|Imports|Settings-Keys|nach jedem Patch laufen lassen, additiv zu pytest
 - RETROAKTIV: Code-Stellen ohne Tests gefunden → Tests nachrüsten (kein separater Patch nötig)
+
+## Integration-Test-Pflicht (P213-pre-6)
+- **Vor jedem "Chris muss noch testen"-Eskalations-Vermerk gilt die Frage: kann ich das selbst testen?** Server starten, echten Call machen, echte Antwort pruefen — wenn JA, Test schreiben und ausfuehren, NICHT eskalieren. Nur wenn die Antwort wirklich NEIN ist (echtes Geraet / echtes Mikrofon / echter Telegram-Client / subjektive UX) ist die Eskalation an Chris/Jojo legitim
+- **Konvention:** Integration-Test-Dateien heissen `test_integration_*.py`, tragen `pytestmark = pytest.mark.integration` (oder `@pytest.mark.integration` per Test). Default-pytest ueberspringt sie via `pytest.ini addopts = -m "not e2e and not guard_live and not integration"`. Aufruf: `pytest -m integration` oder via Sync-Tool-Auto-Hook
+- **Skip-statt-Fail-Vertrag:** Wenn der Server / Index / externe Service nicht erreichbar ist, MUSS der Test `pytest.skip(...)` aufrufen, nicht failen — sonst kann Coda den Marker nicht in der CI laufen lassen
+- **Server starten autonom:** Coda startet den Server bei Bedarf via `start_stable.bat` (P213-pre-4, ohne Reload-Watcher), wartet auf Health-Check, fuehrt Tests aus, stoppt bei Bedarf. Reload-Watcher (`start.bat`) ist ungeeignet, weil Tool-Edits den Server-State zerschiessen
+- **Sync-Tool-Auto-Verifikation (P213-pre-6):** `python -m tools.sync_huginn_rag` ruft nach erfolgreichem Sync automatisch `pytest -m integration -k huginn_rag` auf. Wenn der Test fehlschlaegt, kippt der Sync-Exit-Code auf 1 — Coda sieht den Fehler sofort und kann den Doku-Drift beheben. Override via `--skip-integration-test`
+- **Erste Referenz-Implementierung:** `zerberus/tests/test_integration_huginn_rag.py` mit vier Asserts (Stand-Anker-Hauptquery, Systemname, Anti-Halluzinations-Check, Para­phrasen-Match). Spiegelt die P213-pre-4-Live-Verifikation; haette die gesamte P213-pre-Saga auf einen Patch reduziert
+- **Strukturelle Absicherung:** `zerberus/tests/test_p213_pre_6_integration_framework.py` enthaelt Source-Audits, die das Framework gegen versehentliches Entfernen schuetzen — pytest.ini-Eintrag, conftest-Marker, Test-File-Existenz, Sync-Tool-Hook-Konstanten, CLAUDE_ZERBERUS-Regel-Eintrag, lessons-md-Lehre
+- **Schulden-Konvention "Live-Verifikation steht aus":** Wenn ein vorheriger Patch noch ein offenes "Chris muss noch testen" hat, das automatisierbar waere, ruestet Coda opportunistisch einen Integration-Test nach — nicht alle auf einmal, sondern wenn der naechste Patch sowieso in der Naehe ist. Pflicht: jeder neue Pipeline-/RAG-/Auth-/Sync-Patch geht mit mindestens einem Integration-Test einher, sofern automatisierbar
 
 ## Huginn-RAG-Selbstwissen (P178)
 - Huginn ruft vor jedem LLM-Call `_huginn_rag_lookup(user_msg, settings)` in [`zerberus/modules/telegram/router.py`](zerberus/modules/telegram/router.py)|Treffer landen via `_inject_rag_context` als "--- Systemwissen ---"-Block VOR der Intent-Instruction im System-Prompt|sowohl Legacy-Pfad (`_process_text_message`) als auch P174-Pipeline-Pfad (`handle_telegram_update`) angeschlossen
