@@ -1,5 +1,10 @@
 # CLAUDE_ZERBERUS.md – Zerberus Pro 4.0
 
+## Autonome Prioritätsliste — Coda fragt nicht "wie weiter?" (FR-AUTONOME-PRIORITÄT — Prozess-Regel)
+- **AUTONOME-PRIORITÄT** | Wenn alle Phasen-Ziele ✅ und kein expliziter nächster Schritt vom User: 1) Doku-Catchup wenn ≥3 Patches ohne SUPERVISOR/PROJEKTDOKU/huginn_kennt_zerberus-Update → Doku nachholen + Huginn-RAG-Sync | 2) Offene Schulden aus HANDOVER-Liste (pre-existing Failures, Folgebugs mit eigenem Patch) → kleinsten zuerst | 3) WORKFLOW.md prüfen ob nächste Phase-Ziele definiert → erste Ziele angehen | 4) Wenn nichts davon zutrifft → in HANDOVER dokumentieren "Wartet auf Phase-Spec vom User" und STOPPEN
+- **NIEMALS den User fragen "wie möchtest du weitermachen"** wenn die Antwort aus HANDOVER+WORKFLOW ableitbar ist
+- **"Wie möchtest du weitermachen?" ist nur erlaubt wenn:** User-Entscheidung mit echtem Architektur-Risiko nötig ist (Scope-Sprengung, irreversible Änderung) ODER keine der vier Regeln oben greift
+
 ## Loki / Fenrir / Vidar — Pflicht-Lauf bei jedem UI-/Auth-/Pipeline-Patch (P215 — Prozess-Regel)
 - **Bei JEDEM Patch der UI, Auth, Chat-Pipeline, RAG, Guard, Huginn oder einen Endpoint anfasst** → Server starten via [`start_stable.bat`](start_stable.bat) und ALLE drei Playwright-Suiten gegen den Live-Server ausfuehren|Reihenfolge: 1) **Vidar** (Smoke, Go/No-Go ~60s) `pytest zerberus/tests/test_vidar.py -m e2e`, 2) **Loki** (E2E) `pytest zerberus/tests/test_loki.py zerberus/tests/test_loki_mega_patch.py -m e2e`, 3) **Fenrir** (Chaos) `pytest zerberus/tests/test_fenrir.py zerberus/tests/test_fenrir_mega_patch.py -m e2e`|Failures = Blocker — kein Push ohne gruene Suiten ODER dokumentierten Skip-Grund mit Ticket-/Schulden-Verweis
 - **`-m e2e` ist Pflicht** — pytest.ini deselektiert e2e/integration im Default-Run, ohne Marker laufen die Tests nicht (alle Vidar/Loki/Fenrir-Module tragen `pytestmark = pytest.mark.e2e`)
