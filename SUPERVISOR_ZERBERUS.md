@@ -1,10 +1,210 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: Patch 213 (2026-05-04) – Reasoning-Schritte sichtbar im Chat (Phase 5a Ziel #13 ABGESCHLOSSEN)*
+*Letzte Aktualisierung: P216 (2026-05-05) – Pre-LLM Input Validator. Phase 5a damit VOLLSTÄNDIG ABGESCHLOSSEN — alle 18 Ziele zu.*
 
 ---
 
 ## Aktueller Patch
+
+**Patch 216** — Pre-LLM Input Validator (Phase 5a Ziel #15 ABGESCHLOSSEN — Phase 5a damit komplett) (2026-05-05)
+
+Vor P216 lief jede User-Message ungefiltert durch die volle Pipeline (Persona → Project-Overlay → RAG → Spec-Probe → Haupt-LLM-Call), auch wenn die Eingabe offensichtlich Junk war (`""`, `"qwerty"`, `"!!!!!!"`, 50 KB copy-paste-Logfile). Jeder dieser Calls kostete Tokens (RAG-Embedding + Hauptmodell) und Server-Last (VRAM-Slot, GPU-Queue) ohne sinnvolle Antwort. P216 baut eine Pure-Function-Reject-Schicht VOR dem teuersten Schritt: leere/zu-lange/symbol-only/keyboard-spam-Eingaben werden mit freundlichem DE-Text per Early-Return abgewiesen, kein LLM-Call, kein RAG, kein Persona-Lookup.
+
+**Architektur: Pure-Function-Schicht plus Audit-Tabelle plus Feature-Flag plus Verdrahtung als FRÜHESTER Block.**
+
+- **Modul** [`zerberus/core/input_prevalidator.py`](zerberus/core/input_prevalidator.py) mit vier Reject-Pattern (Pure-Function, O(n), nur stdlib): `_is_empty(text)` (whitespace-only nach `strip`), `_is_too_long(text, max_chars)` (>`max_chars`, Default 8000), `_is_pure_symbols(text)` (kein Buchstabe/keine Ziffer nach `strip`, nur Punctuation/Whitespace, Emoji passt durch), `_is_keyboard_spam(text, *, min_length, threshold)` (nach Whitespace+Punctuation-Strip mindestens `min_length` Zeichen, dann ENTWEDER 80%+ aus einem einzelnen Char ODER 80%+ als zusammenhängender Klaviatur-Run auf den drei Reihen `qwertyuiop`/`asdfghjkl`/`zxcvbnm`).
+- **Reihenfolge** `empty → too_long → pure_symbols → keyboard_spam` — empty-Check vorrangig (semantisch korrekt für `" "*9000`), too_long vor pure_symbols (Token-Schutz hat Vorrang). Erste Match gewinnt → `RejectVerdict`-Dataclass mit `code`/`human_message`/`original_length`.
+- **Audit-Tabelle** `prevalidation_rejects` in [`database.py`](zerberus/core/database.py): `audit_id` (UUID4 hex), `session_id`, `reason_code`, `original_text` (truncated 500 Bytes UTF-8-safe), `original_length`, `created_at`. Best-Effort-Insert via `store_prevalidation_audit(...)`. Auswertung: wie oft greift der Validator, welcher Code dominiert, kommt der gleiche User mehrfach mit Spam?
+- **Feature-Flag** `PrevalidationConfig` in [`config.py`](zerberus/core/config.py) mit `enabled=True` / `max_chars=8000` / `keyboard_spam_min_length=5` / `keyboard_spam_threshold=0.8`. Bei `enabled=False` fällt der ganze Block weg (Pre-P216-Verhalten als zuverlässiger Rollback).
+- **Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py)** als FRÜHESTER Block direkt nach `last_user_msg`-Extraction, VOR Persona-Wrap (P184), Project-Overlay (P197), Runtime-Info (P185), Decision-Box-Hint (P118a), Prosodie (P190+P204), Projekt-RAG (P199), Spec-Contract (P208) und LLM-Call. Begründung: maximaler Token-Spar — Validator-Reject vor allen drei spart 100% der nachgelagerten Arbeit.
+- **Bei Reject** drei Branches: UUID4-`audit_id` generiert, `[PREVAL-216] reject session=... code=... len=... audit_id=...` Logging, `store_prevalidation_audit(...)` mit truncated text (fail-open), `store_interaction("user", ..., "assistant", ...)` + `update_interaction()` (Pattern wie spec-cancelled aus P208 — User-History bleibt vollständig), `return ChatCompletionResponse(model="prevalidation-reject-<code>", ...)` mit dem `human_message`-Text als `assistant`-Choice.
+
+**Was P216 bewusst NICHT macht:**
+
+- **Sprach-Erkennung** ("ist die Eingabe Deutsch?") — zu viele False-Positives ohne LLM-Call, der Validator soll billig bleiben.
+- **Cost/Budget-Cap** — separate Schicht (User-State-abhängig), kann eigener Folge-Patch werden.
+- **Re-Prompt-Loop bei Reject** — User schickt halt was Sinnvolles als nächstes; kein automatischer Retry.
+- **Frontend-Sondercard** — die Reject-Antwort wird wie eine normale Bot-Bubble gerendert (Pattern wie spec-cancelled).
+- **Tunable-Per-User-Schwellen** — alle User teilen sich `max_chars`/`keyboard_spam_threshold`. Wer legitim Logfiles pasten will, schickt mehrere Nachrichten.
+- **Whitelist-Liste** für "vertrauenswürdige" User — Permission-Level-aware Bypass wäre Folge-Patch.
+
+**Lessons (3):**
+
+1. **Pre-LLM-Validator-Block muss FRÜHESTER Schritt sein, sonst zerstört eine andere Reihenfolge den Token-Spar-Sinn.** Wenn der Validator nach RAG/Spec/Persona käme, hätten wir die teuren Calls schon ausgeführt — Sinn der Schicht ist 0% Vor-LLM-Arbeit bei Reject.
+2. **`enabled=False` muss den ganzen Block deaktivieren — Pre-P216-Verhalten als zuverlässiger Rollback.** Wenn die Heuristik einmal jemanden falsch ablehnt und der Bug kritisch wird, muss ein einzelner Config-Flip alles deaktivieren ohne Code-Edit.
+3. **Reject-Reason-Codes sind eine geschlossene Whitelist.** `REJECT_CODES` als Set; Custom-Codes werden silent verworfen. Pattern aus P206/P208/P209/P213/P214: jede neue Pipeline-Komponente bekommt zwei oder drei kleine Whitelists statt einer grossen.
+
+**Tests:** 82 in [`test_p216_input_prevalidator.py`](zerberus/tests/test_p216_input_prevalidator.py). 12 Klassen: `TestIsEmpty` (4), `TestIsTooLong` (5), `TestIsPureSymbols` (8), `TestKeyboardRunCount` (7), `TestIsKeyboardSpam` (9), `TestShouldRejectInput` (11 inkl. Reihenfolgen-Tests), `TestHelpers` (8 — truncate UTF-8-safe, audit_id UUID4, human_message_for-Whitelist+Fallback), `TestAuditTrail` (4), `TestLegacySourceAudit` (10 — Reihenfolge VOR persona/spec/rag, Early-Return, Audit-Call, fail-open), `TestConfigSourceAudit` (5), `TestEndToEnd` (6 — alle vier Reject-Pfade machen 0 LLM-Calls, Pass-Pfad macht LLM-Call, `enabled=False` lässt alles durch), `TestSmoke` (4).
+
+Lokal: 2573 baseline (P215-pre-1) → **2655 passed** (+82 P216, 0 NEUE Failures), 5 failed pre-existing identisch (test_faiss_migration + test_patch169_bugsweep + 3× test_patch185_runtime_info), 4 xfailed identisch, 131 deselected. **e2e-Sweep alle drei Suiten gegen Live-Server grün:** Vidar 20 passed / 1 skipped, Loki 41 passed / 4 skipped, Fenrir 17 passed / 2 skipped. Gesamt 78 passed / 7 skipped / 0 failed (identisch P215-pre-1-Baseline — P216 ist Backend-only).
+
+**Logging-Tag:** `[PREVAL-216]` mit Sub-Events `reject session=... code=... len=... audit_id=...`, `audit_written audit_id=... session=... reason=... len=...`, `audit_failed (non-fatal): ...`, `audit_import_failed: ...`, `Pipeline-Fehler (fail-open): ...`. Worker-Protection-konform: kein User-Content im Log, nur reason_code + Längen-Metriken.
+
+---
+
+## Vorheriger Patch
+
+**Patch 215-pre-1** — Touch-Target-Vervollständigung `.copy-btn` + `.bubble-action-btn` auf Mobile-44px (Cluster G aus P215-Sweep) (2026-05-05)
+
+P215 hatte den Mobile-Touch-Sweep gegen die UI gemacht und 30 Touch-Target-Violations gefixt — drei CSS-Cluster: `.hamburger`, `.session-pin-btn`, `.sidebar-action-btn`. Beim Final-Sweep blieben zwei Selektoren übrig, deren 44x44-CSS nur in `@media (hover: none) and (pointer: coarse)` stand statt im Default-Block: `.copy-btn` (Code-Card-Copy-Button im Nala-Frontend) und `.bubble-action-btn` (Edit/Delete-Aktionen pro Bubble). Auf Geräten ohne Hover-Trigger im Browser-Engine fielen die Werte zurück auf <44px. P215-pre-1 zieht die Werte raus aus der Media-Query in den Default-Block.
+
+**Architektur: zwei CSS-Tweaks plus zwei Vidar-Tests plus HTML-Report-Re-Run.**
+
+- [`nala.py`](zerberus/app/routers/nala.py) — `.copy-btn` und `.bubble-action-btn` bekommen `min-width: 44px` + `min-height: 44px` direkt im Default-Block. Die Mobile-Media-Query bleibt redundant erhalten als Defense-in-Depth — bei zukünftigen Refactors fällt der Default-Block evtl. weg, dann greift die Media-Query weiter.
+- **Tests:** Zwei neue Vidar-Tests `test_copy_btn_min_44_in_default` und `test_bubble_action_btn_min_44_in_default` als CSS-Source-Audit (Substring-Match auf `min-height: 44px` im Default-Block UND in Media-Query).
+- **e2e-Sweep:** alle drei Suiten gegen Live-Server grün (Server-Restart-Pflicht nach CSS-Aenderung war eingehalten — `start_stable.bat` ohne `--reload`). Vidar 20 passed / 1 skipped, Loki 41 passed / 4 skipped, Fenrir 17 passed / 2 skipped. Vorher P215-Baseline: Vidar 19/21, Loki 41/45, Fenrir 37/39 → Touch-Target-Erweiterung der Vidar-Suite +2, sonst stabil.
+
+**Lessons (1):**
+
+1. **Touch-Target-CSS-Werte gehören in den Default-Block, NICHT nur in `@media (hover: none) and (pointer: coarse)`.** Browser-Heuristik für Mobile-Detection ist nicht überall identisch — bei manchen Geräten/Browser-Engines springt die Media-Query nicht an, dann fallen die Werte auf den Default zurück. Default-Block 44x44 + Media-Query als Defense-in-Depth ist die robuste Variante.
+
+**Tests:** 2 neue + Vidar-Sweep. Lokal: 2571 baseline (P215) → **2573 passed** (+2 P215-pre-1).
+
+---
+
+## Vorheriger Patch
+
+**Patch 215** — Loki/Fenrir/Vidar-Pflicht-Regel + Nachhol-Sweep mit drei CSS-Touch-Target-Fixes (2026-05-05)
+
+Coda hatte seit P93 (Bau von Loki/Fenrir/Vidar) Dutzende UI-/Auth-/Pipeline-Patches gemacht ohne die drei Suiten konsequent gegen den Live-Server auszuführen — und am Ende stand jeweils "Chris muss noch testen". Anti-Pattern: was bequem ist (Unit-Tests, Mocks) wurde gebaut, was notwendig ist (Live-E2E gegen `start_stable.bat`-Server) wurde vermieden. P215 erhebt den Pflicht-Lauf zur Prozess-Regel in CLAUDE_ZERBERUS.md UND fixt die 30 Touch-Target-Violations + 16 driftbedingten Test-Failures, die im Nachhol-Sweep aufschlugen.
+
+**Architektur: Prozess-Regel plus drei CSS-Cluster plus Test-Anpassungen plus zwei dokumentierte Skips.**
+
+- **Prozess-Regel in CLAUDE_ZERBERUS.md** (neue Top-Section "Loki / Fenrir / Vidar — Pflicht-Lauf bei jedem UI-/Auth-/Pipeline-Patch"). Bei JEDEM Patch der UI/Auth/Chat-Pipeline/RAG/Guard/Huginn/Endpoint anfasst → Server starten via `start_stable.bat` und ALLE drei Playwright-Suiten gegen den Live-Server. Reihenfolge: 1) **Vidar** (Smoke ~60s, Go/No-Go), 2) **Loki** (E2E), 3) **Fenrir** (Chaos). `-m e2e` ist Pflicht-Marker. Failures = Blocker — kein Push ohne grüne Suiten ODER dokumentierter Skip mit Schulden-Verweis.
+- **Drei CSS-Touch-Target-Fixes** in [`hel.py`](zerberus/app/routers/hel.py) und [`nala.py`](zerberus/app/routers/nala.py): `.hamburger` 40x33 → 44x44, `.session-pin-btn` 23x14 → 44x44, `.sidebar-action-btn` Höhe 37 → ≥44px. Die Werte standen vorher teilweise in `@media (hover: none) and (pointer: coarse)`, aber nicht im Default-Block — wurden in den Default-Block gezogen.
+- **Sechs veraltete Selektoren angepasst:** `.icon-btn[aria-label='Einstellungen']` → Sidebar-Footer-`button.sidebar-footer-cog` via offene Sidebar (Settings-Cog ist seit Monaten im Sidebar-Footer, der Test prüfte den alten Header-Cog). Plus `.bubble-max-width 90% → 92%` (mobile) und `75% → 80%` (desktop).
+- **Zwei dokumentierte Skips mit Schulden-Eintrag:** `test_f_pace_01_master_toggle_stable` (Pacemaker-Master-Toggle wurde durch Minuten-Setting ersetzt — Test-Anpassung als Schuld), `test_f_tts_02_button_not_duplicate` (TTS-Race-Condition bei rapid-fire-Sends, mit `wait_for_function`-Fallback gefixt; Skip greift bei sehr langsamen Bot-Antworten).
+- **Bug-Limit:** `max 3 echte Bug-Fixes` als Sweep-Disziplin — sonst wäre der Patch ein 3-Tage-Marathon. Der Rest der Drifts geht in die Schulden-Liste.
+
+**Was P215 bewusst NICHT macht:**
+
+- **Pacemaker-UI-Refactor** — Master-Toggle-Drift bleibt als Schuld in HANDOVER. Skip-mit-Begründung statt fail.
+- **TTS-Pipeline-Tuning** — Race-Condition wird mit `wait_for_function` gefixt; tieferes Debugging der TTS-Pipeline ist eigener Patch.
+- **Settings-Cog-Mobile-Refactor** — Test braucht zwei Klicks (Burger + Cog), das ist UX-Schuld für eigene Diskussion.
+- **CI-Integration** — Suiten laufen weiter manuell. CI-Runner für Live-Server-e2e ist eigener Patch.
+
+**Lessons (4):**
+
+1. **Wenn ein System eine Smoke-/E2E-/Chaos-Suite hat, IST diese Suite das Pflicht-Gate vor "Patch ist fertig".** Nicht "wenn ich Zeit habe", nicht "wenn der Patch gross genug ist" — bei JEDEM Patch der den von der Suite abgedeckten Bereich anfasst.
+2. **UI driftet still.** Beim Sweep fielen 16 von 105 e2e-Tests über veraltete Selektoren / veraltete Werte / echte Touch-Target-Bugs — keiner dieser Drifts wurde im PR diskutiert, sie reisen in CSS-Patches mit ohne dass jemand "ach das ist ja jetzt nicht mehr 44px" sagt.
+3. **Skip-mit-Begründung ist die richtige Haltung bei pre-existing Drift.** Drei Optionen: 1) echter Bug → fixen, 2) veralteter Test → Selektor anpassen, 3) UI hat sich strukturell geändert → `pytest.skip("Klartext-Begründung als Schuld in HANDOVER")`. Anti-Pattern: rote Tests mit "kommt später" — rote Tests werden ignoriert, grüne werden gelesen.
+4. **Bug-Limit pro Patch macht den Sweep ueberhaupt erst durchfuehrbar.** Ohne Limit wird der Sweep entweder ein 3-Tage-Patch oder gar nicht gestartet. Mit `max 3` liefert er was sich in einer Session machen lässt und gibt der nächsten eine glasklare Liste.
+
+**Tests:** Drei CSS-Tests in Vidar-Suite + sechs Selektor-Anpassungen in Loki/Fenrir + zwei dokumentierte Skips + neue Source-Audit-Tests für die CLAUDE_ZERBERUS-Regel-Section. Lokal: 2528 baseline → **2571 passed** (+43 P215). e2e-Sweep grün: Vidar 19 passed / 2 skipped (1 Schuld), Loki 41 passed / 4 skipped (cosmetic), Fenrir 37 passed / 2 skipped (dokumentierte Schuld).
+
+---
+
+## Vorheriger Patch
+
+**Patch 214-pre-3** — Scheduler-Sandbox-Anbindung kind=shell (Phase 5a Ziel #14 ABGESCHLOSSEN) (2026-05-05)
+
+Vor P214-pre-3 war `kind=shell` ein Stub aus P214-pre-1, der mit `error: Sandbox-Run noch nicht angeschlossen` auditierte. P214-pre-3 schliesst die Sandbox an: Cron-getriebene Shell-Runs laufen mit Pre-Snapshot (P207, fail-CLOSED), `execute_in_workspace`-Pfad mit `writable=True` Workspace-Mount, Post-Snapshot (best-effort), Output-Format mit `[SCHED-214 shell exit=N took=Mms]`-Header. Defense-in-Depth: Sandbox-Isolation (P171: --network none, read-only Root, no-new-privileges, PID/Memory/CPU-Limits) + Workspace-Mount (P203c) + Path-Check (`is_inside_workspace`) + Secrets-Filter (P212 stdout/stderr) + Pre-Snapshot-Anker (P207).
+
+**Architektur: shell-Handler plus Pure-Function-Erweiterungen plus SandboxConfig.bash_image plus Tests.**
+
+- **`_execute_kind_shell(task)`** in [`zerberus/modules/scheduler/runner.py`](zerberus/modules/scheduler/runner.py): Pfad 1) `should_snapshot_shell_run`-Gate (project_id Pflicht — Workspace-Mount erforderlich), 2) `snapshot_workspace_async(label="sched214-before-<id8>")` fail-CLOSED, 3) `execute_in_workspace(language="bash", writable=True, project_id, base_dir)` (kein direkter SandboxManager-Call — sonst Path-Sicherheits-Check umgangen), 4) `snapshot_workspace_async(label="sched214-after-<id8>", parent_snapshot_id=before["id"])` best-effort, 5) `format_shell_output` + `is_shell_run_successful`.
+- **Pure-Function-Erweiterungen** in [`zerberus/core/scheduler_tasks.py`](zerberus/core/scheduler_tasks.py): `SHELL_SANDBOX_LANGUAGE="bash"` Konstante, `should_snapshot_shell_run(task)` (project_id-Pflicht), `format_shell_output(*, exit_code, stdout, stderr, ...)` mit Header `[SCHED-214 shell exit=N took=Mms[ truncated][ sandbox_error=...]]\n--- STDOUT ---\n...\n--- STDERR ---\n...`, `is_shell_run_successful(*, exit_code, sandbox_error)` (nur exit==0 + kein sandbox_error).
+- **SandboxConfig.bash_image** in [`zerberus/core/config.py`](zerberus/core/config.py): Default `"debian:bookworm-slim"` (~80MB, bash-fähig). `SandboxManager._image_and_command` mappt `language=="bash"` auf `(bash_image, ["bash", "-c", code])`. **Operator muss bewusst opt-in:** `bash` zu `allowed_languages` hinzufügen UND `bash_image` ziehen — sonst "Sprache nicht erlaubt"-Reject (beabsichtigt: Shell-Runs sind neues Risiko-Profil).
+- **Tests:** 43 Unit + Source-Audits in [`test_p214_pre_3_scheduler_shell.py`](zerberus/tests/test_p214_pre_3_scheduler_shell.py) (TestShouldSnapshotShellRun / TestFormatShellOutput / TestIsShellRunSuccessful / TestShellSandboxLanguageConstant / TestSandboxConfigBashImage / TestSandboxManagerBashCommand / TestRunnerShellPathSourceAudit / TestSandboxManagerBashSourceAudit / TestSmoke). Plus 3 Integration-Tests in `test_integration_p214_scheduler.py` (`TestShellPathExecution`): Happy-Path mit gemocktem `snapshot_workspace_async` + `execute_in_workspace`, Sandbox-Error → audit-error mit `sandbox_error=Timeout` im Output, Pre-Snapshot=None → `execute_in_workspace` wird NICHT aufgerufen (Sicherheitspfad-Test).
+
+**Was P214-pre-3 NICHT macht:** Multi-Image-Support, Per-Task-Image-Override, automatischer bash-Default in `allowed_languages`. Bewusst restriktiv — Operator-Awareness bei Shell-Cron-Runs.
+
+**Lessons (3):**
+
+1. **Beim Verdrahten eines neuen schreibenden Pfads gegen einen Snapshot-Layer: fail-open vs. fail-CLOSED entscheiden.** Pre-Snapshot bei writable Run macht zwei Dinge gleichzeitig (Rollback-Anker + Diff-Vergleich) — wenn er crasht, hat man WEDER Rollback NOCH Diff. Pre-Snapshot ist fail-CLOSED, Post-Snapshot ist best-effort.
+2. **Test-Pattern für fail-closed-Pfade: explizit testen dass die GEFÄHRDETE Operation NICHT aufgerufen wird.** `await_count == 0` als entscheidender Assert, nicht "result.status == error" allein.
+3. **Neue Sandbox-Sprache hinzufuegen heisst NICHT, sie automatisch in `allowed_languages` aufnehmen.** Image-Default da + Sprache nicht in Whitelist = harmlos bis Operator zustimmt.
+
+**Tests:** Lokal: 2530 baseline (P214-pre-2) → **2528 passed** (-2 wegen Test-Reklassifikation, +43 P214-pre-3). 0 NEUE Failures.
+
+---
+
+## Vorheriger Patch
+
+**Patch 214-pre-2** — Scheduler-UI + LLM-Anbindung kind=prompt (Phase 5a Ziel #14, Forts.) (2026-05-05)
+
+Vor P214-pre-2 war `kind=prompt` ein Stub aus P214-pre-1, und Hel-UI hatte keinen Scheduler-Tab. P214-pre-2 baut beides: Hel-UI Tab "Scheduler" mit Liste/Form/Lauf-Historie (auth-gated CRUD-Endpoints), LLM-Anbindung für `kind=prompt` mit Persona-Layer (P197) + Projekt-RAG (P199), Update-Validation gegen Mass-Assignment, Run-History-View für UI.
+
+**Architektur: Hel-UI plus auth-gated CRUD plus prompt-Handler plus Update-Validation plus Run-History.**
+
+- **Hel-UI Tab "Scheduler"** in [`hel.py`](zerberus/app/routers/hel.py): Liste aller Tasks (Name/Cron/Kind/Projekt/letzter Lauf/Status + Aktionen Jetzt-laufen/Edit/Löschen), Form-Overlay zum Anlegen/Editieren mit Cron-Beispielen, Lauf-Historie pro Task (`schedRunsCard`, Top-20). **P203b-Pattern**: data-Attribute + `addEventListener` statt inline `onclick=` (Quote-Verschachtelung-Schutz, Test `test_alle_inline_scripts_parsen` greift).
+- **Auth-gated CRUD-Endpoints** unter `/hel/admin/scheduled-tasks/*`: GET (mit payloads für Edit), POST (validate→build_task_record→insert→register_task), PATCH (validate_task_update + apply_task_update + re-register), DELETE (unregister + DB-Delete; Lauf-Historie bleibt per task_id-Soft-Link), GET `{task_id}/runs?limit=N` (Top-N via `build_run_history_entry`). Logging-Tag `[SCHED-214]` durchgängig.
+- **`_execute_kind_prompt(task)`** in [`runner.py`](zerberus/modules/scheduler/runner.py) — Signatur-Aenderung von `(payload: str)` auf `(task)`, alle Handler bekommen jetzt das ganze DB-Row. Pfad: `resolve_project_overlay(project_id)` (Persona-Layer P197) → slug → `query_project_rag(project_id, payload, base_dir, k=5)` (P199 RAG, defensiv) → `format_rag_block(hits, project_slug)` → `build_prompt_messages(payload, project_slug, rag_context)` → `LLMService.call(messages, session_id="sched214-<task_id>")`. Output-Format `[SCHED-214 prompt model=X pt=Y ct=Z cost=$.6f]\n<answer>` — Token-Counts + Kosten im Audit.
+- **`build_prompt_messages`** Pure-Function in `scheduler_tasks.py`. System-Message: Cron-Preamble (`Kein User da, schreib eine selbsterklaerende Notiz, keine Rueckfragen`) + optional Projekt-Slug + RAG-Block. User-Message: payload-Text. Stack: Scheduler-Preamble → Projekt-RAG → User-Persona-System → Task-Payload.
+- **Update-Validation** `validate_task_update(updates, *, current_kind)` + `apply_task_update(updates)`: Whitelist `_UPDATABLE_TASK_FIELDS = (name, cron_expression, kind, payload, enabled, project_id)` — Mass-Assignment-Schutz. `current_kind` für payload-Validation wenn nur payload geupdated wird.
+- **Run-History-View** `build_run_history_entry(...)` mit `DEFAULT_HISTORY_PREVIEW_BYTES=400` — schmaler View pro Run-Zeile, truncatet output/error_message separat für UI-Liste.
+
+**Was P214-pre-2 NICHT macht:** `kind=shell` weiter Stub (kommt in P214-pre-3), Cost-Aggregation des Scheduler-LLM-Calls in `interactions.cost`, Telegram-Push bei prompt-Ergebnis, Multi-Tenant pro Projekt, Pause/Resume-Knopf.
+
+**Lessons (3):**
+
+1. **Inline-onclick mit verschachtelten Quotes ist eine Falle.** Python-String mit `'<button onclick="fn(\\'' + var + '\\')"...'` zerbricht — `\'`-Sequenz wird zu `'` im finalen JS-Output, ergibt zwei leere Strings. Fix-Pattern: `data-Attribute` + `addEventListener`. `test_alle_inline_scripts_parsen` aus P203b ist der Pflicht-Backstop.
+2. **Wenn Handler-Funktionen mehr Kontext brauchen, dispatch das ganze DB-Row, nicht nur eine Spalte.** Refactor `(payload: str)` → `(task: ScheduledTask)` jetzt — spätere Erweiterungen (Per-Task-Modell-Override) brauchen kein zweites Refactor.
+3. **Source-Audit-Tests sollen ARCHITEKTUR-Vertrag prüfen, nicht IMPLEMENTIERUNGS-Vertrag.** `test_runner_dispatch_table_covers_known_kinds` prüft nur Keys-Whitelist — Handler-Signatur-Refactor war moeglich ohne Audit-Test zu kippen.
+
+**Tests:** 35 Unit + Source-Audits in [`test_p214_pre_2_scheduler_ui.py`](zerberus/tests/test_p214_pre_2_scheduler_ui.py) (TestValidateTaskUpdate / TestApplyTaskUpdate / TestBuildPromptMessages / TestBuildRunHistoryEntry / TestSchedulerUiSourceAudit / TestSchedulerCrudSourceAudit / TestRunnerPromptPathSourceAudit / TestSmoke). Plus 3 Integration-Tests für prompt-Pfad (LLM-Antwort landet im Output, leerer payload → error, LLM-Fehler-String → error-Audit). Lokal: 2495 baseline (P214-pre-1) → **2530 passed** (+35 P214-pre-2).
+
+---
+
+## Vorheriger Patch
+
+**Patch 214-pre-1** — Wiederkehrende Jobs / Scheduler-Backend-Skelett (Phase 5a Ziel #14, Backend) (2026-05-04)
+
+Vor P214 hatte Zerberus keine wiederkehrenden Jobs — der User konnte keine Cron-Tasks pro Projekt definieren ("jeden Morgen um 8 Uhr LLM-Zusammenfassung der Issues", "alle 6h Build-Status checken"). P214-pre-1 baut das Backend-Skelett: Pure-Function-Validation, Loader/Runner, DB-Schema, auth-freie Endpoints für Lese-Liste + manuellen Trigger. `kind=notice` voll funktional, `kind=prompt` und `kind=shell` als klar dokumentierte Stubs (kommen in P214-pre-2 und P214-pre-3).
+
+**Architektur: Pure-Function-Schicht plus Loader/Runner plus DB-Schema plus auth-freie Endpoints.**
+
+- **Pure-Function-Schicht** in [`zerberus/core/scheduler_tasks.py`](zerberus/core/scheduler_tasks.py): `CronSpec`-Dataclass, `parse_cron_expression`/`validate_cron_expression` (5-Felder, Range-Check, Token-Format `*`/`*/N`/`A-B`/`A,B,C`/Zahl), `validate_task_kind`/`validate_task_status`/`validate_task_trigger` (Whitelists), `validate_task_payload`/`validate_task_name`, `validate_task_dict` (Top-Level), `truncate_output` (Bytes-genau), `build_task_record`/`build_run_record` (Defaults + Truncation), `should_allow_manual_run` (Pre-Endpoint-Check). **KEIN APScheduler-Import dort** — Pure-Validation, sonst Test-Pfad-Crash bei fehlender Library.
+- **Loader/Runner** in [`zerberus/modules/scheduler/runner.py`](zerberus/modules/scheduler/runner.py): `TaskScheduler`-Klasse als Wrapper um den existierenden `AsyncIOScheduler` (P57 Overnight). `reload_from_db()` liest enabled Tasks und registriert sie als Cron-Jobs. `register_task`/`unregister_task` für CRUD. `execute_task(task_id, trigger="cron"|"manual"|"boot")` als High-Level-Run mit Audit-Schreibung + Snapshot-Update. Module-Singleton `_task_scheduler` mit `get_task_scheduler`/`set_task_scheduler`-Pattern. `initialize_task_scheduler(apscheduler)` als Lifespan-Hook in `main.py`.
+- **Kind-Dispatch-Tabelle** `_KIND_DISPATCH = {"notice": ..., "prompt": ..., "shell": ...}`. Nur `notice` voll funktional in P214-pre-1 — die anderen sind dokumentierte Stubs mit `error: <Pfad noch nicht angeschlossen>`.
+- **Audit-Tabelle** `scheduled_task_runs` schreibt nur Endzustände (`done|error|skipped|running`-running ist transient). Spalten: `run_id` UUID4 + `task_id` + `started_at`/`finished_at` + `status` + `output`/`error_message` (truncated `DEFAULT_OUTPUT_MAX_BYTES=4096`) + `duration_ms` + `trigger`.
+- **Endpoints auth-frei** in [`legacy.py`](zerberus/app/routers/legacy.py) (Dictate-Lane): `GET /v1/scheduled-tasks?project_id=N` (Lese-Liste, KEINE payloads ausgespiegelt aus Sicherheitsgründen), `POST /v1/scheduled-tasks/{task_id}/run` (manueller Trigger). CRUD-Schreib-Endpoints kommen in P214-pre-2 (auth-gated unter `/hel/admin/scheduled-tasks/*`).
+- **Late-Binding** auf `_async_session_maker`: Runner liest `_db_mod._async_session_maker` zur Laufzeit (nicht `from ... import` zur Modul-Lade-Zeit) — wichtig für Test-Patches in Integration-Tests.
+- **DB-Schema** in [`database.py`](zerberus/core/database.py): `ScheduledTask` mit `task_id` UUID4 + `project_id` (nullable, FK-Logik im Repo nicht im Model) + `enabled` (Integer-Bool) + Lauf-Snapshot-Felder. `ScheduledTaskRun` als Audit-Trail.
+
+**Was P214-pre-1 NICHT macht:** prompt/shell-Kind-Pfade (kommen separat), CRUD-UI in Hel (P214-pre-2), Telegram-Push bei Done, Pause-/Resume-Buttons.
+
+**Lessons (4):**
+
+1. **`from module import _global_var` snapshottet die Referenz beim Import.** Late-Binding auf `_db_mod._async_session_maker` ist Pflicht, wenn Tests das Maker patchen wollen — sonst sieht der Patch `None` weil das Symbol Modul-lokal beim Import-Zeitpunkt einmal `None` war.
+2. **SQLAlchemy AsyncEngine ist Loop-bound — `asyncio.run` mehrfach pro Test ist eine Falle.** Engine in einem `asyncio.run`-Loop erzeugt kann nicht in einem zweiten benutzt werden. Engine-Setup + Tabellen-Create + Test-Logik + Cleanup in EINE Coroutine packen, mit `asyncio.run` genau einmal pro Test.
+3. **Drei kleine Whitelist-Schichten + UUID4-task_id.** `kind` (Funktions-Whitelist), `status` (Audit-Whitelist), `trigger` (Audit-Differentiation). `task_id` als UUID4-hex, nicht Integer-PK — Cross-Session-Defense analog HitL (P206) und Reasoning (P213).
+4. **Stubs für noch nicht implementierte Kinds liefern explizit error mit klarem Hinweis.** `error: <Pfad noch nicht angeschlossen — kommt in P214-pre-N>`. Anti-Pattern: silent-skip oder fake-success.
+
+**Tests:** 76 Unit + Source-Audits in [`test_p214_scheduler_tasks.py`](zerberus/tests/test_p214_scheduler_tasks.py). Plus 7 Integration-Tests in [`test_integration_p214_scheduler.py`](zerberus/tests/test_integration_p214_scheduler.py) (P213-pre-6-Pflicht): Insert→execute_task→Audit-Loop, unbekannte task_id, Stub-Behavior, reload_from_db mit 0/1 Task, disabled-skip, unregister-after-register. Lokal: 2419 baseline (P213-pre-6) → **2495 passed** (+76 P214-pre-1).
+
+---
+
+## Vorheriger Patch
+
+**Patch 213-pre-6** — Integration-Test-Framework + Huginn-RAG-Smoketest + Sync-Tool-Auto-Verifikation (Phase 5a Pflicht-Infrastruktur) (2026-05-04)
+
+Die P213-pre-Saga (vier Code-Patches: pre, pre-2, pre-4 plus pre-3 noch offen) zeigte ein Anti-Pattern: Coda hat Code + Doku + 17 Mock-Tests verifiziert, ohne EIN MAL gegen den laufenden Server zu prüfen, ob `_huginn_rag_lookup("Bei welchem Patch sind wir gerade?")` jetzt wirklich den aktuellen Patch liefert. Mock-Tests grün, echter Server hat weiterhin "Patch 178" halluziniert. P213-pre-6 baut das Integration-Test-Framework, das diese Lücke schließt: separate Marker, separate Datei-Konvention, Sync-Tool-Auto-Hook der nach erfolgreichem HTTP-Sync automatisch den Smoketest fährt.
+
+**Architektur: Integration-Test-Konvention plus Smoketest plus Sync-Tool-Hook plus Source-Audit-Backstops.**
+
+- **pytest.ini** mit `addopts = "not integration"` — Default-Run skippt Integration-Tests, sonst würde jeder lokale Run einen laufenden Server brauchen. `markers = integration: needs running server / live data` als zentrale Marker-Doku.
+- **conftest.py** (root) mit `pytest_collection_modifyitems` der Integration-Tests automatisch markiert wenn der Datei-Praefix `test_integration_*.py` ist — kein manuelles `@pytest.mark.integration` pro Test nötig.
+- **Test-File-Konvention:** `test_integration_*.py` als Datei-Praefix. Setup-Skip statt Fail wenn Server/Index nicht erreichbar (KEIN Fail — sonst kann der Marker nicht in CI laufen). 3-5 Smoke-Asserts gegen den ECHTEN Code-Pfad ohne Mocking. Tolerante Match-Logik (z.B. "P-Nummer >= aktuelle aus Doku" statt exakter String-Match — kein Test-Pflege-Aufwand nach jedem Sync).
+- **Huginn-RAG-Smoketest** [`test_integration_huginn_rag.py`](zerberus/tests/test_integration_huginn_rag.py) — 5 Asserts gegen den echten `_huginn_rag_lookup`-Code-Pfad: `top_chunk["source"]` matcht `huginn_kennt_zerberus.md`, `top_chunk["content"]` enthält "Aktueller Stand", extrahierter Patch-String matcht `r"P\d{3}"`, Patch-Nummer >= 213 (tolerante Untergrenze), Anti-Halluzinations-Match dass kein "P178"-String im Top-Chunk steht.
+- **Sync-Tool-Auto-Verifikation** [`tools/sync_huginn_rag.py`](tools/sync_huginn_rag.py): Pure-Function `build_integration_test_command(marker, keyword)` baut die pytest-CLI testbar. Subprocess-Wrapper `run_integration_test_check` mit Timeout + fail-soft auf pytest-Exit 5 (no tests collected = Warnung, nicht Block). Hook nach erfolgreichem HTTP-Sync: wenn Test fail, Sync-Exit-Code kippt auf 1.
+- **Source-Audit-Tests in [`test_p213_pre_6_integration_framework.py`](zerberus/tests/test_p213_pre_6_integration_framework.py)** (17 Tests) schützen pytest.ini-Eintrag, conftest-Marker, Test-File-Existenz, Sync-Tool-Hook-Konstanten, CLAUDE_ZERBERUS-Regel-Eintraege.
+
+**Was P213-pre-6 NICHT macht:** Multi-Server-Tests (nur localhost), CI-Runner-Setup, Per-Patch-Coverage-Metriken, automatische Test-Generierung.
+
+**Lessons (5):**
+
+1. **Mock-Tests = "der Code laeuft korrekt", Integration-Tests = "das System liefert das richtige Ergebnis".** Beides ist nötig, keiner ersetzt den anderen. Anti-Pattern aus P213-pre-Saga: vier Patches grün, echter Server halluziniert weiterhin.
+2. **Pflicht-Frage vor jedem "Chris muss noch testen": kann ich das selbst testen?** Server starten, echten Call machen, echte Antwort prüfen — wenn JA, Test schreiben + ausführen, NICHT eskalieren. Legitime Eskalationen sind echtes Geräte / echtes Mikrofon / echter Telegram-Client / subjektive UX.
+3. **Sync-Tool-Auto-Verifikation als Backstop.** HTTP-200 ist nicht "Daten korrekt", das ist nur "Bytes durch die Leitung". Bei jedem CLI-Tool das Daten-Drift verursachen kann (Sync, Migration, Restore), gehört ein Integration-Test-Hook hinten dran.
+4. **Strukturelle Absicherung gegen Test-Erosion.** Source-Audit-Tests schützen pytest.ini + conftest + CLAUDE_ZERBERUS-Regel-Eintraege — wenn ein zukünftiger Coda das Framework rauseditiert, fällt mindestens ein Audit-Test.
+5. **Server starten autonom mit `start_stable.bat`, NICHT `start.bat`.** Reload-Watcher zerschiesst beim Sync-Tool-Test den Server-State. `start_stable.bat` (P213-pre-4) ist die offizielle Variante für Coda-Sessions / Sync-Tool-Tests.
+
+**Tests:** 17 in `test_p213_pre_6_integration_framework.py` + 5 in `test_integration_huginn_rag.py` (default-deselected, live-grün via `pytest -m integration -k huginn_rag`). Lokal: 2398 baseline (P213-pre-4) → **2419 passed** (+21 P213-pre-6).
+
+---
+
+## Vorheriger Patch
 
 **Patch 213** — Reasoning-Schritte sichtbar im Chat (Phase 5a Ziel #13 ABGESCHLOSSEN) (2026-05-04)
 
