@@ -8505,3 +8505,35 @@ Lokal: 2573 baseline (P215-pre-1) → **2655 passed** (+82 P216, 0 NEUE Failures
 
 *Stand: 2026-05-05, Patch 216 — Pre-LLM Input Validator. Phase 5a damit VOLLSTÄNDIG ABGESCHLOSSEN — alle 18 Ziele zu. 2655 passed (+82), 0 neue Failures. e2e-Sweep alle drei Suiten grün: 78 passed / 7 skipped / 0 failed.*
 
+## Patch 217-pre (2026-05-07) — `sync_repos.ps1` Quote-Escape-Fix (Tooling-Schuld geschlossen)
+
+**Auslöser.** Im HANDOVER vom 2026-05-05 stand der `sync_repos.ps1` Quote-Escape-Bug seit zwei Sessions als offene Tooling-Schuld auf der Liste. Das Skript hat zwei `git commit -m "Sync: $patchMsg"`-Aufrufe (einen für Ratatoskr, einen fürs Claude-Repo) — beide expandieren `$patchMsg` direkt im PowerShell-Doppelquote-String. Wenn die zuletzt committete Zerberus-Message selbst Anführungszeichen enthält (z. B. `'Patch X: "abc" implementiert'`), zerschießt das Win32-CommandLineToArgvW-Argument-Quoting und git bekommt mehrere fehlerhafte Argumente statt einer einzelnen `-m`-Message. Die letzten zwei Sessions hatten Glück, weil keine Zerberus-Commit-Messages Quotes enthielten — der HANDOVER hat das explizit als Zufall vermerkt. P217-pre macht das Verhalten robust statt zufällig.
+
+**Architektur.** Helper-Funktion plus Smoke-Test plus Lessons-Eintrag — kein Code-Pfad in Zerberus selbst berührt, kein Server-Deployment nötig.
+
+- **`sync_repos.ps1` Helper-Funktion `Invoke-GitCommitFromString`.** Schreibt die fertige Commit-Message via `[System.IO.File]::WriteAllText($tmp, $Message, $utf8NoBom)` in eine Temp-Datei (UTF-8 ohne BOM, weil git die BOM sonst in die Commit-Message einwoben würde) und ruft `git commit -F $tmp`. Damit landet die Message als Datei-Inhalt bei git, völlig unabhängig vom PowerShell-Argument-Quoting an der CommandLine-Boundary. `try/finally` mit `Remove-Item -Force -ErrorAction SilentlyContinue` räumt die Temp-Datei auch im Fehlerfall auf. Die Variableninterpolation passiert **vor** der Funktion: `Invoke-GitCommitFromString -Message "Sync: $patchMsg"` — die Doppelquotes expandieren `$patchMsg` zu seinem Wert und konkatenieren mit dem Präfix, das Resultat ist EIN String der als EINZIGES Parameter-Argument an die Funktion geht. Innerhalb der Funktion gibt es kein Native-Tool-Quoting mehr, alles ist managed-.NET.
+- **Verdrahtung.** Beide alten `git commit -m "Sync: $patchMsg"`-Aufrufe durch `Invoke-GitCommitFromString -Message "Sync: $patchMsg"` ersetzt: einer im Ratatoskr-Sync-Block (alt Z58 → neu Z78), einer im Claude-Repo-Sync-Block (alt Z79 → neu Z99).
+- **Smoke-Test `scripts/test_sync_repos_quote_escape.ps1`.** Erzeugt ein Wegwerf-Git-Repo unter `$env:TEMP\git-quote-test-<guid>`, initialisiert es mit `git init -q` plus `user.email`/`user.name`/`commit.gpgsign=false`, schreibt einen Initial-Commit und führt dann `Invoke-GitCommitFromString` mit sieben progressiv bösartigen Commit-Messages aus: `plain` (Plain-Text-Baseline), `double-quotes` (`'Patch X: "abc" implementiert'`), `single-quotes`, `mixed-quotes` (`'Patch X: "outer ''inner'' outer" Test'`), `umlauts`, `dollar-sign` (`'$var und ${expr} bleiben literal'`) und `backtick` (` ``inline`` ` und ` ``block`` `). Jeder Case wird via `git log -1 --format="%s"` rückgelesen und mit dem Erwartungswert verglichen. `try/finally` räumt das Repo auf. Exit-Code 0 = alle Cases grün, 1 = mindestens ein Case fehlerhaft.
+- **Lokale Verifikation.** `7/7 PASS` — auch der `double-quotes`-Case, der vor dem Fix zuverlässig zerlegt wurde. Die Helper-Funktion ist bewusst 1:1 in den Test-Skript dupliziert (statt Dot-Sourcing aus `sync_repos.ps1`), damit der Test keine Side-Effects des Hauptskripts mitlädt (Set-Location/git push/etc.).
+
+**Was P217-pre bewusst NICHT macht.**
+
+- **Andere PowerShell-Skripte mit demselben Anti-Pattern abgrasen.** `scripts/sync_huginn_rag.ps1` baut HTTP-Headers + JSON, kein `git commit -m "..."`-Aufruf; `scripts/verify_sync.ps1` liest nur. Falls in Zukunft ein neues Skript ähnliches macht, Helper aus `sync_repos.ps1` rauslösen statt copy-paste.
+- **PowerShell-Version-Bump.** Der Bug ist eigentlich ein PS-5.1-Native-Argument-Quoting-Loch; PowerShell 7.3+ hat `PSNativeCommandArgumentPassing` und würde das von selbst escapen. Wir baselinen auf Windows PowerShell 5.1 (Standard auf Windows 11), kein Pflicht-Bump.
+- **CI-Integration des Smoke-Tests.** Es gibt keine PowerShell-CI in der Zerberus-Codebase; der Test ist on-demand-Smoke-Test, läuft nur wenn jemand `sync_repos.ps1` anfasst.
+- **Zerberus-Server-Code anfassen.** Nur Tooling. Die 2655-passed-Baseline + e2e-Suiten bleiben unberührt.
+
+**Tests.** Unit-Suite **bleibt 2655 passed** (P216-Baseline) — kein Server-Code-Pfad berührt, daher keine Regression möglich. Smoke-Test `scripts/test_sync_repos_quote_escape.ps1` lokal `7/7 PASS`. e2e-Suiten unverändert (78 passed / 7 skipped / 0 failed). Manuelle Tests: 1 / 106 unverändert.
+
+**Logging-Tag.** Keiner — reines PowerShell-Tooling, kein Server-Code.
+
+**Lessons (1).**
+
+1. **PowerShell 5.1: für native Tools (`git`, `docker`, `curl`) mit beliebig-quotierten Strings IMMER Argument via Datei + `-F`/`-T`/`@file` übergeben, NIE inline `-m "$var"`.** Das Win32-CommandLineToArgvW-Argument-Quoting eskapiert Anführungszeichen im Variableninhalt nicht zuverlässig — der Aufruf zerlegt sich in mehrere Argumente, das Tool sieht Müll. Der Bug springt nur an, wenn der Variableninhalt tatsächlich `"` enthält → klassisches "läuft heute, kracht in drei Wochen". Robust: Datei schreiben, Tool mit `-F file` aufrufen, Datei wegräumen. UTF-8 ohne BOM (`[System.Text.UTF8Encoding]::new($false)`), sonst landet die BOM im Inhalt. PowerShell 7.3+ hat `PSNativeCommandArgumentPassing` und würde das von selbst escapen — wer auf 5.1 baselined ist, muss explizit den Datei-Pfad wählen.
+
+**Schulden-Status.** P217-pre schließt die Tooling-Schuld #1 aus dem 2026-05-05-HANDOVER. Verbleibende Schulden (siehe `BACKLOG_ZERBERUS.md` und `ZERBERUS_MARATHON_WORKFLOW.md`): P213-pre-3 Reindex-Endpoint transaktional (~1-2h, mittlerer Aufwand), Pacemaker-Master-Toggle UI-Layout-Drift (Refactor + Test, höherer Aufwand), TTS-Race-Condition-Pipeline-Audit, Settings-Cog-Mobile-UX-Frage, fünf pre-existing Doku-/Migrations-Test-Failures. Phase 5b (BGE-Reranker-Integration für Huginn-RAG-Lookup als Kandidat) wartet weiter auf Spec.
+
+---
+
+*Stand: 2026-05-07, Patch P217-pre — sync_repos.ps1 Quote-Escape-Fix (Tooling-Schuld #1 geschlossen). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, kein Code-Pfad berührt. Unit-Suite bleibt 2655 passed, Smoke-Test 7/7 PASS, e2e-Sweep unverändert (78 passed / 7 skipped / 0 failed).*
+

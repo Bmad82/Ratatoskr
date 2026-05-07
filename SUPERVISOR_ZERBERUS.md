@@ -1,10 +1,40 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P216 (2026-05-05) – Pre-LLM Input Validator. Phase 5a damit VOLLSTÄNDIG ABGESCHLOSSEN — alle 18 Ziele zu.*
+*Letzte Aktualisierung: P217-pre (2026-05-07) – `sync_repos.ps1` Quote-Escape-Fix (Tooling-Schuld geschlossen). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — alle 18 Ziele zu, kein Code-Pfad berührt.*
 
 ---
 
 ## Aktueller Patch
+
+**Patch 217-pre** — `sync_repos.ps1` Quote-Escape-Fix (Tooling-Schuld #1 aus dem 2026-05-05-HANDOVER geschlossen) (2026-05-07)
+
+`sync_repos.ps1` hat zwei `git commit -m "Sync: $patchMsg"`-Aufrufe (Ratatoskr und Claude-Repo) — beide expandieren `$patchMsg` direkt im PowerShell-Doppelquote-String. Wenn die zuletzt committete Zerberus-Message selbst Anführungszeichen enthält (z. B. `'Patch X: "abc" implementiert'`), zerschießt das Win32-CommandLineToArgvW-Quoting und git bekommt mehrere fehlerhafte Argumente statt einer einzelnen `-m`-Message. Die letzten zwei Sessions hatten Glück, weil keine Zerberus-Messages Quotes enthielten (siehe Vorgänger-HANDOVER). P217-pre macht das robust statt zufällig.
+
+**Architektur: PowerShell-Helper plus Smoke-Test plus 1:1-Quote-Lessons-Eintrag — kein Code-Pfad in Zerberus selbst berührt.**
+
+- **Helper-Funktion** `Invoke-GitCommitFromString` in [`sync_repos.ps1`](sync_repos.ps1) schreibt die fertige Message in eine Temp-Datei (UTF-8 ohne BOM via `[System.Text.UTF8Encoding]::new($false)`) und ruft `git commit -F $tmp`. Damit landet die Message als Datei-Inhalt bei git, völlig unabhängig vom PowerShell-Argument-Quoting. Ohne BOM, weil git sonst die BOM in die Commit-Message einwoben würde. `try/finally` mit `Remove-Item -Force -ErrorAction SilentlyContinue` räumt die Temp-Datei auch im Fehlerfall auf.
+- **Verdrahtung** beide `git commit -m "Sync: $patchMsg"`-Aufrufe (Z58 alt → Z78 neu für Ratatoskr, Z79 alt → Z99 neu für Claude-Repo) durch `Invoke-GitCommitFromString -Message "Sync: $patchMsg"` ersetzt. Variableninterpolation passiert **vor** der Funktion → Funktions-Parameter ist ein einzelner Stringwert → keine Quote-Probleme mehr.
+- **Smoke-Test** [`scripts/test_sync_repos_quote_escape.ps1`](scripts/test_sync_repos_quote_escape.ps1) erzeugt ein Wegwerf-Git-Repo unter `$env:TEMP`, führt `Invoke-GitCommitFromString` mit sieben progressiv bösartigen Commit-Messages aus (`plain`, `double-quotes`, `single-quotes`, `mixed-quotes`, `umlauts`, `dollar-sign`, `backtick`) und vergleicht den `git log -1 --format="%s"`-Round-Trip mit dem Erwartungswert. Cleanup im `finally`. Exit-Code 0 = grün, 1 = mindestens ein Case fehlerhaft. Aufruf: `powershell -ExecutionPolicy Bypass -File scripts/test_sync_repos_quote_escape.ps1`.
+- **Lokale Verifikation:** `7/7 PASS` — inklusive `'Patch X: "abc" implementiert'`, `'Patch X: "outer ''inner'' outer" Test'`, Umlaute, `$var`/`${expr}` und ` ``inline`` `-Backticks. Ohne den Fix wäre mindestens der `double-quotes`-Case in PowerShell 5.1 zerlegt worden.
+
+**Was P217-pre bewusst NICHT macht:**
+
+- **Andere Skripte mit demselben Anti-Pattern abgrasen.** `scripts/sync_huginn_rag.ps1` und `scripts/verify_sync.ps1` haben ihr eigenes Quoting-Verhalten und sind nicht betroffen (Sync-Skript baut Headers/JSON, kein `git commit -m "..."`; verify_sync liest nur). Falls in Zukunft ein neues Skript ähnliches macht, Helper aus `sync_repos.ps1` rauslösen statt copy-paste.
+- **PowerShell-Version-Bump.** Der Bug ist eigentlich ein PS-5.1-Native-Argument-Quoting-Loch; PS 7.3+ hat `PSNativeCommandArgumentPassing` und würde das von selbst escapen. Wir haben aber Windows PowerShell 5.1 als baseline (Standard auf Windows 11), kein Pflicht-Bump.
+- **CI-Integration des Smoke-Tests.** Es gibt keine PowerShell-CI in der Zerberus-Codebase; der Test ist on-demand-Smoke-Test, läuft nur wenn jemand sync_repos.ps1 anfasst.
+- **Zerberus-Code anfassen.** Nur Tooling. Die 2655-passed-Baseline + e2e-Suiten bleiben unberührt.
+
+**Lessons (1):**
+
+1. **PowerShell 5.1: für native Tools (`git`, `docker`, `curl`) mit beliebig-quotierten Strings IMMER Argument via Datei + `-F`/`-T`/`@file` übergeben, NIE inline `-m "$var"`.** Das Win32-CommandLineToArgvW-Argument-Quoting eskapiert Anführungszeichen im Variableninhalt nicht zuverlässig — der Aufruf zerlegt sich in mehrere Argumente, das Tool sieht Müll. Der Bug springt nur an, wenn der Variableninhalt tatsächlich `"` enthält → klassisches "läuft heute, kracht in drei Wochen". Robust: Datei schreiben, Tool mit `-F file` aufrufen, Datei wegräumen. UTF-8 ohne BOM, sonst landet die BOM im Inhalt.
+
+**Tests:** Volle Unit-Suite **bleibt 2655 passed** (P216-Baseline) — kein Code-Pfad berührt, daher keine Regression möglich. Smoke-Test `scripts/test_sync_repos_quote_escape.ps1` lokal `7/7 PASS`. Manuelle Tests: 1/106 unverändert. e2e-Suiten unverändert (78 passed / 7 skipped / 0 failed).
+
+**Logging-Tag:** keiner — reines PowerShell-Tooling, kein Server-Code.
+
+---
+
+## Vorheriger Patch
 
 **Patch 216** — Pre-LLM Input Validator (Phase 5a Ziel #15 ABGESCHLOSSEN — Phase 5a damit komplett) (2026-05-05)
 
@@ -1232,8 +1262,9 @@ Whisper 4.5 + BERT 0.5 + Gemma E2B 3.0 + DualEmbedder 0.5 + Reranker 1.0 + Windo
 
 - **Persona-Hierarchie** (Hel vs. Nala „Mein Ton") — löst sich mit SillyTavern/ChatML-Wrapper (B-071)
 - **`interactions`-Tabelle ohne User-Spalte** — Per-User-Metriken erst nach Alembic-Schema-Fix vertrauenswürdig
-- **`scripts/verify_sync.ps1`** existiert nicht — `sync_repos.ps1` Output muss manuell geprüft werden
+- ~~**`scripts/verify_sync.ps1`** existiert nicht — `sync_repos.ps1` Output muss manuell geprüft werden~~ **(seit längerem GELÖST: `scripts/verify_sync.ps1` existiert und meldet 0/0/0 unpushed Commits in allen drei Repos.)**
 - ~~**`system_prompt_chris.json` Trailing-Newline-Diff** — `git checkout` zum Bereinigen, kein echter Bug~~ **(GELÖST 2026-05-07: Datei aus dem Repo entfernt, chris-Profil fällt auf Default `system_prompt.json` zurück.)**
+- ~~**`sync_repos.ps1` Quote-Escape-Bug** — Anführungszeichen in Commit-Messages brechen `git commit -m "...$var..."` über das PowerShell-5.1-Native-Argument-Quoting~~ **(GELÖST 2026-05-07 mit P217-pre: Helper `Invoke-GitCommitFromString` schreibt Message via Temp-Datei und ruft `git commit -F`. Smoke-Test `scripts/test_sync_repos_quote_escape.ps1` 7/7 grün.)**
 - **Voice-Messages in Telegram-DM** funktionieren nicht (P182 Unsupported-Media-Handler antwortet höflich) — B-072 für echte Whisper-Pipeline
 
 ## Architektur-Warnungen
