@@ -1,10 +1,52 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P219-pre (2026-05-07) — Sammel-Patch: drei Prozess-Regeln (Coda-Autonomie schärfen + Supervisor-Bug-Sammelstelle + Supervisor-Bug-Sammelstand-Anzeige) plus Bugfix "quasi" aus Filler-Word-Liste entfernen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
+*Letzte Aktualisierung: P213-pre-3 (2026-05-07) — Transaktional-atomarer Reindex-Endpoint. Schulden-Liste-Position #2 geschlossen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
 
 ---
 
 ## Aktueller Patch
+
+**Patch 213-pre-3** — Transaktional-atomarer Reindex-Endpoint (HANDOVER-Schulden-Liste #2 geschlossen) (2026-05-07)
+
+Die HANDOVER-Schulden-Liste-Position #2 aus der P213-pre-Saga: `POST /hel/admin/rag/reindex` crashte mit HTTP 500 wenn ein Encoder-Fehler mitten im Re-Build auftrat — UND lies dabei den FAISS-Index leer auf Disk zurück (Datenverlust). Das Anti-Pattern: erst `_reset_sync(settings)` (Index + Metadata leeren + persistieren), DANN der Encoding-Loop. Wenn ein Chunk crashte (GPU OOM, Modell-Lade-Fehler, Embedder-Dim-Switch), blieb der gerade geleerte Index leer auf Disk. Jeder weitere Server-Start lud diesen leeren Index — die Userdaten waren weg.
+
+**Architektur: Pure-Function-Helper plus FAISS-BAK-MUSTER plus atomarer Swap.**
+
+- **Neuer Helper `_rebuild_index_atomic(chunks, settings)`** in [`zerberus/modules/rag/router.py`](zerberus/modules/rag/router.py): baut einen neuen FAISS-Index in einer LOKALEN Variable, encoded ALLE Chunks vollständig durch BEVOR der globale Zustand angefasst wird. Erste Encode-Dim definiert den Target-Dim für den ganzen Rebuild — wenn ein späterer Chunk eine andere Dim liefert (Embedder switcht mid-rebuild), wird mit `RuntimeError` ("Embedder-Dim-Inkonsistenz") abgebrochen statt einen inkonsistenten Index zu erzeugen.
+- **FAISS-BAK-MUSTER** (per CLAUDE_ZERBERUS.md DESTRUKTIV-OPS-Regel): vor dem Disk-Swap wird das alte Index-File nach `<file>.pre_reindex_<UTC-Timestamp>.bak` kopiert (via `shutil.copy2`). Backup-Erstellung ist bedingt — frischer Index ohne Disk-File braucht kein Backup, dann ist `backup_path=None` im Result.
+- **Atomarer Swap unter `_init_lock`**: erst NACH erfolgreicher Encode-Loop und Backup-Erstellung wird `_index = new_index` und `_metadata = new_metadata` gesetzt + auf Disk persistiert. Bei jedem Encoder-Fehler oder Dim-Inkonsistenz mitten im Rebuild bleibt der globale Zustand komplett unangetastet — Aufrufer (der Endpoint) kann sich darauf verlassen, dass `_index`/`_metadata` weiterhin die Vor-Reindex-Daten halten.
+- **Endpoint-Anpassung in [`zerberus/app/routers/hel.py`](zerberus/app/routers/hel.py)**: `rag_reindex()` ruft jetzt `_rebuild_index_atomic` via `asyncio.to_thread` statt erst `_reset_sync` und dann eine `_encode`+`_add_to_index`-Loop. Bei Exception aus dem Helper landet ein klar formuliertes `HTTPException(500, "Reindex fehlgeschlagen — alter Index wurde NICHT überschrieben: <e>")` beim User. Logging-Tag `[RAG-219-pre-3]` für Backup-Pfad und Erfolgs-Meldung.
+
+**Was P213-pre-3 bewusst NICHT macht:**
+
+- **Inkrementellen Reindex.** Der Helper baut den Index komplett neu auf — bei großen Korpussen (10k+ Chunks) ist das langsam. Ein inkrementeller Pfad ("nur die geänderten Chunks neu encoden") wäre ein Feature-Patch mit eigenem Bewertungs-Aufwand. Bugfix-Scope hält sich an "atomar oder gar nicht".
+- **Backup-Garbage-Collection.** Die `.pre_reindex_<UTC>.bak`-Dateien sammeln sich an, wenn man häufig reindiziert. Sie sind in `.gitignore` (FAISS-BAK-MUSTER), aber jemand muss sie manuell aufräumen. Folge-Patch: einfacher Cron-Job (P214-pre-3 Pattern: `kind=shell`) der `.bak`-Dateien älter als 7 Tage löscht.
+- **EN-Index-Rebuild.** Der globale `_add_to_index` schreibt aktuell nur nach DE (siehe Pre-Patch-Doc-Comment). EN-Index ist read-only, kommt aus separater Sync-Tool-Welle. Wenn EN je in den Add-Pfad kommt, kann `_rebuild_index_atomic` 1:1 auf EN gespiegelt werden — Helper-Signatur ist generisch genug.
+- **Konkurrente Add/Search während Reindex blockieren.** Reindex ist Admin-Operation, erwartet ruhige Last. Konkurrente `_add_to_index`-Calls während des Encoding-Loops würden mit dem Swap überschrieben (gleiches Risiko wie in der Vor-P213-pre-3-Variante). Doc-Comment dokumentiert das explizit.
+- **Hel-UI-Confirmation-Dialog.** Der Reindex-Button löst direkt aus. Bei großen Korpussen wäre eine "Bist du sicher? — alte Backup wird unter X.bak gesichert" Card sinnvoll, aber Feature-Add ohne klaren ROI für den Bugfix.
+
+**Lessons (3):**
+
+1. **Reset-vor-Rebuild ist immer ein Datenverlust-Risiko — egal wie kurz der Spalt ist.** Das alte Pattern (`_reset_sync` → encoding loop) erschien harmlos: "wir leeren den Index, dann füllen wir ihn neu". Aber jeder Encoder-Crash zwischen den beiden Schritten leert den persistierten Index. Lesson generalisierbar: bei jeder "alten Zustand löschen → neuen aufbauen"-Operation auf persistenten Stores muss der neue Zustand VORHER vollständig in einer separaten Variable existieren, dann atomar geswappt werden. Das gilt für FAISS-Indices, Datenbank-Migrationen, Config-Files, Workspace-Snapshots — überall wo "Datenverlust beim Crash mitten in Schritt 2" eine Rolle spielt.
+2. **FAISS-BAK-MUSTER auch für planmäßige Operationen, nicht nur für Recovery.** P218-pre nutzte das Pattern bei Dim-Mismatch-Recovery (impliziter Datenverlust), P213-pre-3 nutzt es bei jedem geplanten Reindex (zur Sicherheit auch wenn alles gut geht). Lesson: das Backup zahlt sich aus bei dem 1% der Fälle, wo der Swap fehlschlägt — und in den 99% normalen Läufen kostet es nur eine `shutil.copy2`. Generalisierbar: bei jedem Pfad der ein FAISS-Index-File überschreibt, das Pre-Image nach `<file>.<grund>_<UTC>.bak` sichern. Coda räumt die alten `.bak`-Dateien später auf, das ist eine eigene Schuldenposition.
+3. **Source-Audit-Tests greifen auch hier — Anti-Pattern-Check als Defense-in-Depth.** `test_endpoint_no_longer_calls_reset_or_add_to_index` prüft den Endpoint-Source darauf, dass das alte Anti-Pattern (`_reset_sync(...)` direkt vor einem `_add_to_index(...)`-Loop) NICHT mehr vorkommt. Wenn jemand in einem zukünftigen Refactor versehentlich das alte Pattern wieder einführt (Copy-Paste, Merge-Konflikt), schlägt der Test sofort an. Lesson: Source-Audit-Tests sind nicht nur für "diese Funktion existiert" gut, sondern auch für "dieses Anti-Pattern kommt nicht mehr vor" — beides sind kostengünstige Backstops gegen Regression.
+
+**Tests:** 14 neue in [`zerberus/tests/test_p213_pre_3_reindex_atomic.py`](zerberus/tests/test_p213_pre_3_reindex_atomic.py). Sechs Test-Klassen:
+
+- `TestRebuildAtomicHappyPath` (2) — Drei Chunks → globaler State swappt sauber, Save-Funktionen einmalig aufgerufen, `reindexed`-Count stimmt.
+- `TestRebuildAtomicEmptyChunks` (1) — Edge-Case: leere Liste = no-op, kein Encode, kein Save, globaler State unverändert.
+- `TestRebuildAtomicEncoderFailure` (2) — Erste Encode crasht / dritte Encode crasht: kein Save aufgerufen, globaler State (Index + Metadata) zeigt noch auf die ursprünglichen Objekte (nicht nur gleiche Werte — `is`-Identität).
+- `TestRebuildAtomicDimInconsistency` (1) — Encoder switcht mid-rebuild Dim 768→1024: `RuntimeError("Dim-Inkonsistenz")`, globaler State unverändert.
+- `TestRebuildAtomicBackupCreation` (2) — Existierendes Index-File wird vor Swap nach `.pre_reindex_<TS>.bak` kopiert (Inhalt geprüft via `read_bytes()`); fehlendes Index-File → `backup_path=None`.
+- `TestSourceWiring` (6) — Defense-in-Depth: Helper-Funktion definiert, FAISS-BAK-MUSTER im Source, `_init_lock` für Swap, Endpoint importiert Helper, alte Anti-Patterns (`_reset_sync(`/`_add_to_index(` als Calls) nicht mehr im Endpoint, HTTPException(500) mit Klartext "alter Index ... NICHT überschrieben".
+
+Alle 14 lokal grün. Volle Unit-Suite-Erwartung: **2691 passed lokal erwartet** (+14 P213-pre-3 auf 2677-Baseline = P219-pre + P218-pre + P216).
+
+**Logging-Tag:** `[RAG-219-pre-3]` mit Sub-Events `Pre-reindex backup erstellt: <path> (Source: ..., N neue Chunks bereit)`, `Reindex-Swap erfolgreich: N Chunks im neuen Index`, `Reindex fehlgeschlagen, alter Index bleibt unveraendert: <error>`. Worker-Protection-konform: kein User-Content im Log, nur Pfad-Metadaten plus Counts.
+
+---
+
+## Vorheriger Patch
 
 **Patch 219-pre** — Sammel-Patch: Coda-Autonomie + Supervisor-Bug-Sammelstelle + "quasi"-Bugfix (2026-05-07)
 
