@@ -367,6 +367,7 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 - Blockiert → Frage in DECISIONS_PENDING parken → nächsten unabhängigen Patch nehmen
 - Session-Ende: HANDOVER.md überschreiben|Manuelle-Tests-Liste pflegen|Patch-Status in Workflow aktualisieren
 - Push + sync_repos.ps1 + scripts/verify_sync.ps1 als letzter Schritt
+- **Worktree-Branch IMMER nach main mergen vor Session-Ende|sonst läuft Server auf altem Code auch wenn Patch committed ist|Reihenfolge: merge → push main → HANDOVER schreiben** (Anlass P217: Patch lag fertig auf `claude/upbeat-golick-e85610`, Server las main, FAISS-Fix war committed aber nicht aktiv|User konnte trotz fertigem Patch nichts hochladen). Konkret im Hauptcheckout: `cd C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus && git merge <worktree-branch> --ff-only && git push origin main`. Wenn Merge ausnahmsweise NICHT erfolgt → im HANDOVER explizit vermerken: "Branch noch nicht auf main gemergt — Server zieht alten Code, Patch ist NICHT aktiv."
 
 ## Pflicht nach jedem Patch
 - SUPERVISOR_ZERBERUS.md aktualisieren: Nummer|Datum|3-5 Zeilen Inhalt
