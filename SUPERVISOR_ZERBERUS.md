@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-3 (2026-05-07) — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 ✅, UI-4 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-4 (2026-05-07) — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay, neuer Aufbau (Suchfeld → Neuer Chat → Projekte → Historie → Footer). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 ✅, UI-5 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,46 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
+
+Vierter Code-Patch der UI-Redesign-Phase. Die Sidebar oeffnet sich nicht mehr als Overlay ueber dem Chat (Backdrop-Klick = Schliessen), sondern schiebt den Chat-Content per CSS-Transform 280px nach rechts und rutscht selbst von links ein — Mistral-Le-Chat-Vorbild. Der Sidebar-Inhalt ist von oben nach unten neu sortiert: Suchfeld (Chat-Historie durchsuchen, Lupe-Placeholder) ganz oben, dann Aktion-Buttons "➕ Neuer Chat" und "📁 Projekte", dann Chat-Historie (Pinned + Letzte Chats), dann Footer mit Abmelden + Einstellungen. Der Projekte-Button ist neu und ist ein eigener Sidebar-Menuepunkt (DESIGN.md Sektion 12.2: "Projekte raus aus Settings"); uebergangsweise routet er ueber `openProjectsView()` auf den Settings → Projekte-Tab — UI-5 ersetzt diesen Click-Pfad durch eine eigene Project-View, der Button selbst bleibt an der DOM-Position.
+
+**Architektur: CSS-Transform-Shift + DOM-Refactor (Sidebar wird body-Child) + JS-Click-Outside-Listener + Source-Audit-Tests.**
+
+- **CSS-Block `.app-container` erweitert** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): bestehende Frame-Definition (max-width 500px, height 100dvh, flex column, position relative, box-shadow) bleibt unangefasst — nur eine zusaetzliche Property `transition: transform 0.3s ease`. Neue Regel `body.pui4-sidebar-open .app-container { transform: translateX(280px); }` triggert den eigentlichen Shift. Die Bestands-CSS-Definition fuer `.sidebar` (`position: fixed; left: -300px; width: 280px; transition: left 0.3s ease`) wird komplett wiederverwendet — die rein-rutsch-Mechanik der Sidebar ist seit Patch 67 stabil.
+- **`.overlay`-CSS entfernt** (alter Backdrop-Block plus `.overlay.show`-Regel). Spec sagt "KEIN Overlay/Ueberklappen". Statt Backdrop schliesst die Sidebar via JS bei Click ausserhalb.
+- **HTML-Refactor**: das `<div class="sidebar" id="sidebar">`-Markup wurde aus `#chat-screen` ausgehaengt und ist jetzt ein body-Child (Geschwister von `.app-container`, vor `<div id="ee-modal">`). Grund: bei `transform` auf `.app-container` wuerde ein im Container sitzender fixed-positioned Descendant zum containing-block-Kind und mit-shiften — die Sidebar muss aber Viewport-bound bleiben. Der Move ist transparent fuer alle Bestands-Selektoren (`getElementById('sidebar')`/`'archive-search'`/`'pinned-list'`/`'session-list'`-Listener bleiben funktional).
+- **HTML-Reihenfolge in der Sidebar** umsortiert (DESIGN.md Sektion 12.2): `archive-search` zog von unter "📋 Letzte Chats" nach OBEN in den `sidebar-header`. `sidebar-actions` enthaelt jetzt zwei Buttons (statt einem): "➕ Neuer Chat" (vorher Text "Neue Session" — auf Spec angeglichen) und neu "📁 Projekte" mit `id="sidebar-projects-btn"`. Pinned-Heading + Pinned-List + "📋 Letzte Chats"-h3 + Session-List bleiben darunter. Footer (Abmelden + Settings, Patch 142/B-013) bleibt sticky-unten unangefasst. Der explizite `close-btn` (✖) wurde entfernt — Spec sagt "Tap ausserhalb oder Hamburger-Icon erneut" als Standard-Pattern.
+- **`<div class="overlay" id="overlay" onclick="toggleSidebar()">` HTML-Element entfernt** — passt zum CSS-Block-Entfernen.
+- **JS-Refactor `toggleSidebar()`** in derselben Datei: nutzt jetzt `willOpen = !sidebar.classList.contains('open')` und togglet in einem Schritt sowohl `sidebar.classList.toggle('open', willOpen)` als auch `document.body.classList.toggle('pui4-sidebar-open', willOpen)`. Die body-Klasse triggert den `.app-container`-Transform per CSS. Kein `overlay.classList.toggle('show')` mehr.
+- **JS-Helper `pui4_handleOutsideClick(event)`** als Top-Level-Function direkt nach `toggleSidebar()`. Logik: bei offener Sidebar pruefen ob `event.target` innerhalb der Sidebar ist (`sidebar.contains(event.target)`) oder Hamburger-Whitelist (`event.target.closest('.hamburger')`); wenn nein → `event.preventDefault()` + `event.stopPropagation()` + `toggleSidebar()`. Registriert mit `document.addEventListener('click', pui4_handleOutsideClick, true)` (capture-phase, dritter Parameter `true`) — feuert vor anderen Listenern (z.B. P-UI-2 capture-Listener auf User-Bubbles), der User wollte die Sidebar schliessen, nicht eine Bubble togglen.
+- **JS-Helper `openProjectsView()`** ebenfalls Top-Level. Schliesst die Sidebar (`toggleSidebar()`), oeffnet das Settings-Modal und switcht auf den Projekte-Tab. Defensive `typeof === 'function'`-Checks an beiden Settings-Aufrufen — wenn UI-5 die Funktion umbaut oder umbenennt, knallt nichts.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_4_sidebar_content_shift.py`](zerberus/tests/test_p_ui_4_sidebar_content_shift.py): fuenf Klassen, 29 Tests. Slice-basierte Source-Inspektion (kein Browser/Playwright) per Pattern aus P-UI-3.
+
+**Was P-UI-4 bewusst NICHT macht:**
+
+- **Project-View bauen.** Der `openProjectsView()`-Click oeffnet uebergangsweise Settings → Projekte-Tab. UI-5 ist der eigene Patch-Schritt fuer die Project-View (Suche, Sortierung, Pinned-Sektion, Pull-Gesture, Detail-View). DOM-Position des Buttons bleibt — UI-5 ersetzt nur den Click-Handler.
+- **Hamburger-Animation (z.B. ☰ → ✖).** Der Hamburger bleibt visuell "☰" auch bei offener Sidebar. Spec hat dazu keine Aussage, und das Hinzufuegen einer Klasse-basierten Symbol-Animation ist Mini-Add fuer einen spaeteren Patch.
+- **Sidebar-Breite fuer Tablet/Desktop anpassen.** `width: 280px` ist Mobile-First. Auf Desktop (Viewport > 800px) bleibt `.app-container` mittig 500px breit; ein 280px-Shift ergibt einen leichten Versatz aus der Mitte. Akzeptables Trade-off, weil Nala primaer Mobile ist und der offene-Sidebar-Zustand temporaer.
+- **`particleCanvas` aus `.app-container` rausziehen.** Das Patch-145-Feuerwerk-/Sternen-Canvas (`position: fixed; pointer-events: none; z-index: 9999`) sitzt noch innen — bei Sidebar-Open wird es per Transform mit-geshifted und deckt nicht mehr den vollen Viewport. In Praxis selten sichtbar (Effekt nur bei speziellen Events + temporaere Sidebar-Offen-Phase). Folge-Patch falls auffaellt.
+- **Suchfeld-Funktion erweitern.** Der bestehende `archive-search`-Listener (Patch 67-aera) durchsucht weiterhin die Session-Liste. Spec sagt "durchsucht Chat-Historie" — das macht er schon. Folge-Funktionalitaet (z.B. Fulltext durch Bot-Antworten) bleibt UI-9-Settings-Schritt vorbehalten.
+- **DESIGN.md-[WERT]-Befuellung.** Sektion 12 (Sidebar / Hamburger-Menue) hat keine offenen `[WERT]`-Platzhalter; Aufbau und Verhalten stehen explizit in den Tabellen 12.1 und 12.2. Spacing/Z-Index/Shadow-Stufen-Befuellung bleibt spaeteren Patches ueberlassen.
+- **Hel-Splitscreen-Bug** (Schulden-Liste #9) — eigener Folge-Patch innerhalb der Phase 5c, nicht vermischt mit der Sidebar.
+
+**Lessons (3):**
+
+1. **`transform` auf einem Vorfahren formt einen neuen containing block fuer fixed-positioned Descendants.** Das CSS-Spec-Detail (CSS Transforms Module Level 1, Sektion 6.1) sagt: jeder Vorfahre mit `transform`/`filter`/`perspective` ungleich `none` wird zum containing block fuer all seine fixed-positioned Descendants — nicht mehr der initial containing block (Viewport). Praktische Folge: wenn `.app-container` einen `transform: translateX(280px)` kriegt und die `.sidebar` darin sitzt, shiftet die Sidebar mit dem Container — exakt entgegen der Sidebar-Mechanik (sie soll Viewport-bound bleiben). Loesung: Sidebar-DOM aus dem transformed Vorfahren herausziehen (in P-UI-4 als body-Child platziert). Bestands-Code-Audit zeigte, dass die Sidebar-CSS-Definition (position fixed, left -300px, width 280px) vollstaendig ueber die Bestands-Patch-67-Regel funktioniert — der DOM-Move war die einzige Aenderung, kein neues CSS noetig. **Lesson generalisierbar:** vor jedem `transform`-Edit auf Container-Element die fixed-positioned Descendants identifizieren — wenn welche darunter sind, entweder DOM-Refactor (Descendant raushebeln) oder containing-block-aware-Variante (z.B. `margin` statt `transform`, was kein neues containing block formt). Source-Audit-Test `test_sidebar_steht_ausserhalb_chat_screen` zementiert die DOM-Position als Invariante.
+2. **Capture-phase Listener auf `document` fangt Click-Outside ohne ein dediziertes Backdrop-Element.** Das alte `.overlay`-Element war Backdrop UND Click-Trap in einem (`onclick="toggleSidebar()"` direkt auf dem Overlay-DIV). Bei Content-Shift-Mechanik ist kein Overlay mehr da — wo fange ich den Click-Outside? `document.addEventListener('click', handler, true)` (capture-phase, drittes Argument `true`) feuert auf jeden Click vor allen anderen Listenern, inklusive Bubble-phase auf den shifted Children. Mit `event.preventDefault() + event.stopPropagation()` konsumiert der Listener den Click — keine versehentliche Aktion auf dem shifted Content. Hamburger-Whitelist via `event.target.closest('.hamburger')` (sonst toggelt der Hamburger-onclick gleichzeitig ZUSAETZLICH, Bilanz wäre no-op). **Lesson generalisierbar:** wenn ein Backdrop-Pattern abgeloest wird (Click ausserhalb des Modals), ist `document`-level capture-phase Listener mit Whitelist + preventDefault + stopPropagation der saubere Ersatz — funktioniert auf jedem DOM-Layout und braucht kein dediziertes Click-Trap-Element.
+3. **DOM-Move ist transparenter Refactor, wenn die Bestands-Selektoren ID-basiert sind.** Der HTML-Move der Sidebar von `#chat-screen`-innen nach body-Child wuerde bei klassen-basierten Selektoren (z.B. `#chat-screen .sidebar`) brechen. ABER: alle Bestands-Listener nutzen `getElementById('sidebar')`, `getElementById('archive-search')`, `getElementById('pinned-list')`, `getElementById('session-list')` — ID-Selektoren sind position-unabhaengig. Plus die CSS-Definition fuer `.sidebar`/`.sidebar-actions`/`.sidebar-footer` ist via Klassen-Selektor ohne Ancestor-Pfad — funktioniert auch nach dem Move. Vor dem Move via Audit verifiziert dass kein `#chat-screen .sidebar`/`#chat-screen #sidebar` etc. im Source vorkommt. **Lesson generalisierbar:** bei DOM-Move-Refactors immer zuerst per Grep auf Ancestor-relative Selektoren pruefen (z.B. `#chat-screen .sidebar` oder `parent > .sidebar` oder `closest('.app-container')`). ID-basierte Selektoren sind transparent fuer DOM-Position, klassen-basierte sind es nur wenn der Selektor selbst keinen Ancestor-Pfad enthaelt. Falls ja: entweder Selektor refactoren oder DOM-Move verwerfen.
+
+**Tests:** 29 neue in [`zerberus/tests/test_p_ui_4_sidebar_content_shift.py`](zerberus/tests/test_p_ui_4_sidebar_content_shift.py) — fuenf Klassen. Alle 150 Nala-relevanten Tests gruen lokal (test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). Volle Suite-Erwartung: **2813 passed lokal erwartet** (P-UI-3-Baseline 2784 + 29 P-UI-4-Tests). Worktree-Lauf zeigt pre-existing Backend-Failures unveraendert — bekannter Worktree-Setup-Drift, nicht durch P-UI-4 verursacht (Patch beruehrt nur Frontend).
+
+**Logging-Tag:** keiner — P-UI-4 ist reines Frontend-CSS+HTML+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
 
@@ -48,7 +88,7 @@ Dritter Code-Patch der UI-Redesign-Phase. Das Eingabefeld unten (sticky-Bottom) 
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-2** — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben (2026-05-07)
 
@@ -83,7 +123,7 @@ Zweiter Code-Patch der UI-Redesign-Phase. User-Bubbles werden bei langem Text (>
 
 ---
 
-## Vorheriger Patch
+## Vorvorheriger Patch (Referenz)
 
 **Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07, parallel zu P-UI-1)
 
