@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-2 (2026-05-07) — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 ✅, UI-3 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-3 (2026-05-07) — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 ✅, UI-4 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,42 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
+
+Dritter Code-Patch der UI-Redesign-Phase. Das Eingabefeld unten (sticky-Bottom) kollabiert bei verlorenem Fokus auf eine Zeile (~44 px) mit Ellipsis-Truncation, sodass nur die letzte eingegebene Zeile sichtbar bleibt — User weiss wo er zuletzt war. Bei Fokus expandiert es sanft auf `33dvh` (~1/3 Bildschirm), was zusammen mit der Mobile-Tastatur (~1/3) und dem sichtbaren Chat-Bereich (~1/3) die gewünschte Drittelung ergibt. Sende-Button rechts unten in der Bubble-Anordnung ist nur aktiv, wenn das Eingabefeld nicht leer (oder reines Whitespace) ist — Klasse `.send-btn.pui3-empty` deaktiviert Click und Hover-Effekte via `pointer-events: none` und `opacity: 0.4`.
+
+**Architektur: CSS-only fuer die Hoehe (kein inline-style.height mehr) plus minimaler JS-Helper plus Source-Audit-Tests.**
+
+- **CSS-Block `#text-input` umgebaut** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): default `min-height: 44px; max-height: 44px; height: 44px;` plus `white-space: nowrap; text-overflow: ellipsis; overflow: hidden;` fuer eine sauber abgeschnittene Single-Line-Anzeige. Bei `:focus` greift ein eigener Selektor mit `min-height: 33dvh; max-height: 33dvh; height: 33dvh; white-space: pre-wrap; overflow-y: auto;` — mehrzeilige Eingabe + scrollbar. Sanfte Transition `border 0.2s, box-shadow 0.2s, height 0.3s ease, min-height 0.3s ease, max-height 0.3s ease` macht den 44px↔33dvh-Pop fluessig. Mobile-Landscape-Media-Query (`max-height: 500px`) hat das alte `min-height: 40px; max-height: 96px` fuer #text-input entfernt — sonst wuerde es das 33dvh-Verhalten ueberschreiben. Padding `7px 14px` bleibt fuer Landscape erhalten.
+- **CSS `.send-btn.pui3-empty`** direkt nach dem `:active`-Block: `opacity: 0.4; cursor: default; pointer-events: none; box-shadow: none;` plus expliziter `:hover/:active`-Selektor der `transform: none; box-shadow: none; background: var(--color-gold);` zementiert — der Default-:hover-Effekt (gold-dark + scale + Shadow) wird im leeren Zustand komplett unterdrueckt. Orthogonal zu `lockInput()/unlockInput()` waehrend des Sendens (das setzt `sendBtn.disabled = true` + inline-`opacity: 0.5` und ueberschreibt damit visuell die Klasse).
+- **JS-Helper `pui3_updateSendBtnState()`** als Top-Level-Function vor den Textarea-Listenern. Logik: wenn `textInput.value.trim().length > 0` → `classList.remove('pui3-empty')`, sonst → `classList.add('pui3-empty')`. Aufrufstellen: `input`-Listener (bei jedem Tastendruck), `blur`-Listener, am Ende von `sendMessage` nach `textInput.value = ''`, in `unlockInput()` (nach Send-Lock-Reset), in `editMessage()` (nach Setzen des Texts), in `fullscreenClose(true)` (nach Uebernahme des Fullscreen-Texts), und einmal initial nach dem `keydown`-Listener-Block.
+- **Blur-Handler scrollt zur letzten Zeile**: bei nicht-leerem Inhalt wird `textInput.scrollTop = textInput.scrollHeight` gesetzt — bei mehrzeiligem Inhalt im Collapsed-44px-Modus schiebt das den Scroll-Cursor nach unten, sodass die letzte Zeile im Ellipsis-Modus sichtbar wird. Wrapped in try/catch fuer Browser-Edge-Cases.
+- **Alte Patch-67-autoresize-Logik komplett entfernt**: `Math.min(textInput.scrollHeight, 140)` (vom input-Listener), `Math.min(Math.max(scrollHeight, 96), 140)` (vom focus-Listener), und alle drei `textInput.style.height = ...`-Inline-Setter (in input/focus/editMessage/fullscreenClose). CSS-Selektor `#text-input:focus { height: 33dvh }` ist die alleinige Hoehen-Steuerung — Inline-Styles wuerden CSS-Transitions ueberschreiben und sind deshalb komplett raus.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_3_textarea_collapse.py`](zerberus/tests/test_p_ui_3_textarea_collapse.py): vier Klassen, 26 Tests. `TestSourceWiringCSS` (8) prueft default 44px-Cap, Truncation-Stack (`white-space: nowrap` + `text-overflow: ellipsis` + `overflow: hidden`), Smooth-Transition mit drei Hoehen-Properties, Focus-Expand auf 33dvh, Focus-pre-wrap + overflow-y: auto, Send-Btn-Disabled-Block (opacity + pointer-events: none), Send-Btn-:hover/:active-Override im Empty-Zustand, Mobile-Landscape-Media-Query ohne min-height/max-height-Override fuer #text-input. `TestSourceWiringJS` (10) prueft Helper-Existenz, Trim-Length-Check + Klassen-Toggle, input/blur-Listener-Aufrufe des Helpers, scrollTop=scrollHeight im Blur-Handler, Abwesenheit der alten autoresize-Logik (`Math.min(scrollHeight, 140)` und `textInput.style.height` global), Helper-Aufrufe in sendMessage/unlockInput/editMessage/fullscreenClose, Initialer Aufruf nach keydown-Listener. `TestKollisionMitVorgaengernPatches` (5) zementiert dass P-UI-1, P-UI-2, P124, P139 und der lockInput/unlockInput-Pfad intakt sind. `TestPUiThreeInlineMarker` (3) verlangt dass `P-UI-3 (Phase 5c, 2026-05-07)` mehrfach im Source vorkommt (CSS + JS).
+
+**Was P-UI-3 bewusst NICHT macht:**
+
+- **Send-Button ABSOLUT ins Eingabefeld positionieren.** Mock-Spec sagt "rechts unten im Eingabefeld", aber `<textarea>` ist ein Replaced Element — Buttons koennen nicht inline drinliegen. Aktuelle Anordnung (Sende-Button als Sibling rechts neben der Textarea, `align-items: flex-end` haelt ihn am unteren Bubble-Rand) erfuellt die Spec visuell, ohne die DOM-Struktur (Textarea + Expand-Btn + Send-Btn + Mic-Btn + Prosody-Indicator als 5 Siblings) zu sprengen. Falls Chris ein echtes Inline-Send-Btn-im-Feld will, ist das ein Folge-Patch mit `position: relative`-Wrapper.
+- **Settings-Toggle fuer Auto-Collapse-Verhalten.** Spec ist eindeutig — Default ist 44px collapsed bei Blur. Falls User das Verhalten abschalten wollen wuerden, kommt das in UI-9 (Skalierung Settings-Bereich).
+- **Animation der Truncation.** Wenn der User vom Collapsed-Modus zum Expanded-Modus wechselt (Fokus), animiert die CSS-Transition die Hoehe von 44px → 33dvh. Die `white-space`-Transition (nowrap → pre-wrap) ist NICHT animierbar, das ist ein harter Switch — im Result kein visueller Bruch, aber technisch kein "smooth fade".
+- **Ellipsis-Truncation bei Newline-Inhalten.** Bei `white-space: nowrap` interpretiert die Textarea Newlines im Display teilweise abhaengig vom Browser. Pragmatisch loest der `scrollTop = scrollHeight`-Trick das Problem, indem die letzte Zeile in den sichtbaren Bereich gescrollt wird. Falls bestimmte Browser-Engines das anders rendern, wird das im manuellen Test (Chris/Jojo) auffallen und ist ein Folge-Patch.
+- **Animation des Send-Button-Aktivierens.** Beim Tippen des ersten Zeichens "snappt" der Send-Btn von Empty (opacity 0.4) auf Aktiv (opacity 1) ohne CSS-Transition. Sanfte Opacity-Animation waere nice-to-have, aber die `:hover/:active`-Side-Effects auf der Empty-Klasse bracuhten Override-Selektor — eine zusaetzliche `transition: opacity 0.2s ease` auf `.send-btn` waere ein Mini-Add fuer einen spaeteren Patch.
+- **DESIGN.md-[WERT]-Befuellung.** Sektion 4.3 (Chat-Eingabefeld) hat keine offenen `[WERT]`-Platzhalter, alle Werte explizit (44px, 33dvh, smooth, auto, ja). Spacing/Z-Index/Shadow-Stufen-Befuellung bleibt spaeteren Patches ueberlassen.
+
+**Lessons (3):**
+
+1. **CSS-only fuer Hoehe ist stabiler als JS-getriebene autoresize-Logik.** Die Patch-67-Logik (`Math.min(scrollHeight, 140)` im input/focus-Listener plus `style.height = '...'`-Inline-Setter) hatte ueber die Jahre vier Aufruf-Stellen (input, focus, editMessage, fullscreenClose) — jede setzte Inline-Height direkt und uebersteuerte damit alle CSS-Transitions. P-UI-3 zentralisiert die Hoehe in CSS-Selektoren (`#text-input` default + `:focus`) und entfernt alle Inline-Setter. Die CSS-Transition feuert zuverlaessig bei jedem Fokus-Wechsel. **Lesson generalisierbar:** wenn ein UI-Element zwischen zwei Zustaenden wechselt und beide CSS-driven beschrieben werden koennen (Default + Pseudo-Klasse / State-Klasse), ist CSS-only der stabilste Pfad. JS-Inline-Style-Setter sind versteckte Schalter, die jeder spaetere Refactor-Schritt aus Versehen rausreissen oder unbeabsichtigt brechen kann. Der Source-Audit-Test `test_keine_alte_autoresize_logik` zementiert das: kein `textInput.style.height`, kein `Math.min(scrollHeight, 140)`.
+2. **Klassen-basiertes Disabled-Verhalten ist orthogonal zu native `disabled`.** Send-Button hat zwei voneinander unabhaengige Disabled-Pfade: (1) `lockInput()` setzt `sendBtn.disabled = true` und inline `opacity: 0.5` waehrend eines aktiven Sendens (Native-Browser-Disabled, blockiert Click + Tab-Focus); (2) `pui3_updateSendBtnState()` togglet `.send-btn.pui3-empty` je nach Eingabefeld-Inhalt (CSS-Pseudo-Disabled via `pointer-events: none` + `opacity: 0.4`). Beide koennen gleichzeitig aktiv sein (Senden laeuft + Eingabefeld leer), und das ist OK — der Visual ist konsistent. Aber: nach `unlockInput()` muss der Helper aufgerufen werden, sonst bleibt die Klasse falsch. **Lesson generalisierbar:** wenn zwei Disabled-Mechanismen am selben Button koexistieren (Lock waehrend einer Operation + State-Validierung des Inputs), beide explizit synchronisieren — nicht annehmen dass einer den anderen "von alleine" trifft. Die Source-Audit-Tests `test_unlock_input_ruft_helper` und `test_lock_unlock_input_pfad_intakt` zementieren das.
+3. **`scrollTop = scrollHeight` macht im 44px-Collapsed-Textarea die letzte Zeile sichtbar.** Spec verlangte "Zeigt die letzte eingegebene Zeile" — Browser-Textarea scrollt ohne Hilfe nicht zur letzten Zeile, wenn der Cursor woanders steht. Im Blur-Handler reicht ein einzelnes `textInput.scrollTop = textInput.scrollHeight`, um den Scroll-Container ans Ende zu setzen. Mit `white-space: nowrap; text-overflow: ellipsis; overflow: hidden` wird der Rest des Inhalts sauber abgeschnitten — User sieht die letzte Zeile als Preview-Hinweis. **Lesson generalisierbar:** Browser-`<textarea>`-Elemente respektieren `scrollTop` auch wenn `overflow: hidden` ist — der Scroll-Position-Wert wird intern gespeichert und bei `overflow: visible/scroll`-Wechsel wieder angewendet. Pragmatischer Trick um Truncation-Verhalten an Position-Praeferenzen anzupassen.
+
+**Tests:** 26 neue in [`zerberus/tests/test_p_ui_3_textarea_collapse.py`](zerberus/tests/test_p_ui_3_textarea_collapse.py) — vier Klassen. Alle 121 Nala-relevanten Tests gruen lokal (test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). Volle Suite-Erwartung: **2784 passed lokal erwartet** (P-UI-2-Baseline 2758 + 26 P-UI-3-Tests). Worktree-Lauf zeigt pre-existing Backend-Failures (`test_projects_*` config.yaml-Drift, `test_test_profile_filter`, `test_patch185_runtime_info`, `test_rag_dual_switch`) unveraendert — bekannter Worktree-Setup-Drift, nicht durch P-UI-3 verursacht (Patch berührt nur Frontend).
+
+**Logging-Tag:** keiner — P-UI-3 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-2** — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben (2026-05-07)
 
@@ -81,7 +117,7 @@ Folge-Patch zu P213-pre-3. Das FAISS-BAK-MUSTER aus P213-pre-3 erstellt vor jede
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch
 
 **Patch 213-pre-3** — Transaktional-atomarer Reindex-Endpoint (HANDOVER-Schulden-Liste #2 geschlossen) (2026-05-07)
 
