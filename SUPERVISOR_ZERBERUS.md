@@ -4,6 +4,12 @@
 
 ---
 
+## Parallel-Track: Nala UI-Redesign-Phase (ab 2026-05-07)
+
+Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI_REDESIGN_PROMPT.md) plus React-Mockup [`docs/NalaMockup.jsx`](docs/NalaMockup.jsx) plus erweiterte Spec [`docs/DESIGN.md`](docs/DESIGN.md) eingestellt. Aufgabe: komplettes Redesign des Nala-Chat-UI nach Mistral-Le-Chat-Vorbild plus eigene Features (Sentiment-Ambient, Scroll-Nav-Gabelung, 2-Achsen-Skalierung, Reasoning-Block, LLM-Icon, Projektseite raus aus Settings, Sidebar-Content-Shift, Layout-volle-Breite, Collapse-System, Eingabefeld-Expand). 11 Schritte als eigene Patches, dokumentiert als **Phase 5c** in [`ZERBERUS_MARATHON_WORKFLOW.md`](ZERBERUS_MARATHON_WORKFLOW.md). Kann parallel zu den Phase-5a-Folgepatches laufen — berührt nur Frontend (`zerberus/app/routers/nala.py`), nicht Backend. Bei Widerspruch zwischen `docs/DESIGN.md` und Bestand gilt DESIGN.md.
+
+---
+
 ## Aktueller Patch
 
 **Patch 213-pre-3** — Transaktional-atomarer Reindex-Endpoint (HANDOVER-Schulden-Liste #2 geschlossen) (2026-05-07)
