@@ -1,10 +1,40 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P218-pre (2026-05-07) – FAISS Dim-Mismatch-Recovery im globalen RAG-Add-Pfad. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — der Patch heilt einen Bugfix-Pfad ausserhalb der Phase-5a-Ziele.*
+*Letzte Aktualisierung: P219-pre (2026-05-07) — Sammel-Patch: drei Prozess-Regeln (Coda-Autonomie schärfen + Supervisor-Bug-Sammelstelle + Supervisor-Bug-Sammelstand-Anzeige) plus Bugfix "quasi" aus Filler-Word-Liste entfernen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
 
 ---
 
 ## Aktueller Patch
+
+**Patch 219-pre** — Sammel-Patch: Coda-Autonomie + Supervisor-Bug-Sammelstelle + "quasi"-Bugfix (2026-05-07)
+
+Vier Punkte aus einem Sammel-Auftrag von Chris im Supervisor-Fenster — drei Prozess-Regeln und ein semantischer Bugfix.
+
+**Architektur: drei Doku-Edits + zwei Code-Edits + ein neues Test-File.**
+
+- **Coda-Autonomie schärfen** in [`CLAUDE_ZERBERUS.md`](CLAUDE_ZERBERUS.md) im Marathon-Workflow-Abschnitt: Bei Session-Start liest Coda HANDOVER.md, nimmt die Empfehlung am Ende des "Nächster Schritt"-Abschnitts als Default und legt los — keine "was soll ich machen — A, B oder C?"-Rückfrage. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird abgewichen. Plus: HANDOVER selbst formuliert die Empfehlung jetzt aktiv ("Nächste Session startet mit X — Begründung. Falls Chris was anderes will, überschreibt er.") statt als offene Frage. Verweis auf die bestehende FR-AUTONOME-PRIORITÄT-Regel oben in derselben Datei.
+- **Supervisor-Bug-Sammelstelle** in [`SUPERVISOR_ZERBERUS.md`](SUPERVISOR_ZERBERUS.md) als neue Sektion vor "Don'ts für Supervisor". Wenn Chris im Supervisor-Fenster Bugs/Issues diktiert ohne explizit "fixen"/"angehen"/"los"/"pack zusammen" zu sagen, sammelt der Supervisor still — kein Patch-Prompt, kein Aktionismus. Erst auf explizite Trigger-Phrase wird ein Coda-Auftrag gebaut. Hintergrund: Chris denkt laut beim Sammeln; jeder verfrüht-gestartete Patch unterbricht die Sammelphase.
+- **Supervisor-Bug-Sammelstand-Anzeige** ebenfalls in [`SUPERVISOR_ZERBERUS.md`](SUPERVISOR_ZERBERUS.md) als Teil der neuen Sektion. Am Ende jeder Antwort listet der Supervisor offene Bugs als nummerierte Liste auf (Format-Vorschlag im Doku-Block). Leere Liste → nichts anzeigen. Funktion: visueller Druck — wenn die Liste lang wird, sieht Chris das automatisch und gibt von sich aus den Auftrag, sie abzuarbeiten. Plus: alle paar Prompts oder vor erkennbarem Kontextfenster-Ende erinnert der Supervisor an die Sammlung (≥3 Bugs Trigger).
+- **Bugfix "quasi" aus Filler-Word-Liste** an zwei Stellen: (1) [`whisper_cleaner.json`](whisper_cleaner.json) — Filler-Regex `(?i)\b(eigentlich|irgendwie|quasi|übrigens|prinzipiell|im endeffekt)\b` → `(?i)\b(eigentlich|irgendwie|übrigens|prinzipiell|im endeffekt)\b`. (2) [`zerberus/utils/prompt_compressor.py`](zerberus/utils/prompt_compressor.py) — `_STOPWORDS`-Set ohne "quasi", mit Inline-Kommentar warum. Begründung: "quasi" ist semantischer Qualifier ("annähernd / so etwas wie") und kein Füllwort. "Quasi Reasoning" ≠ "Reasoning" — das Entfernen verändert die Bedeutung. Andere Filler bleiben drin.
+
+**Was P219-pre bewusst NICHT macht:**
+
+- **Andere semantische Qualifier prüfen** ("eigentlich", "irgendwie", "prinzipiell"). Chris hat nur "quasi" gemeldet; Vorgreifen wäre Scope-Sprengung. Falls weitere Wörter durch die Bug-Sammelstelle reinkommen, werden sie in einem späteren Patch behandelt.
+- **Mehrsprachig auf Englisch erweitern.** Die englische Filler-Regex (`uh|um|i mean|you know|kind of|sort of`) hat kein "quasi"-Äquivalent. "Sort of" ist semantisch näher dran und steht als offener Punkt für die Sammelstelle.
+- **Test über `compress_prompt`-Idempotenz hinaus** — der bestehende Idempotenz-Test reicht; P219-pre fügt nur einen positiven Test hinzu dass "quasi" das Kompressions-Verfahren überlebt.
+
+**Lessons (2):**
+
+1. **Filler-Word-Listen sind Bedeutungs-relevant — semantische Qualifier gehören NIE rein.** "quasi", "sort of", "kind of" sind Hedge-Wörter, die das Vertrauensniveau einer Aussage modulieren. Sie zu entfernen verändert die Aussage: "Das ist quasi ein Reasoning-Schritt" sagt etwas anderes als "Das ist ein Reasoning-Schritt". Lesson generalisierbar: vor jeder Erweiterung einer Stop-/Filler-Word-Liste prüfen — ist das Wort funktional (Diskursmarker, Pausen-Filler) oder semantisch (Qualifier, Verstärker, Negation)? Funktional: weg damit. Semantisch: drin lassen, auch wenn es im Statistik-Profil prominent ist.
+2. **Supervisor-Bug-Sammelstelle als Anti-Pattern-Schutz.** Ohne Sammelstelle kämen Bugs als Einzelaufträge an Coda — jeder mit eigenem Kontext-Aufbau, eigenem Commit, eigenem Sync. Mit Sammelstelle gibt es einen einzigen Sammel-Auftrag pro Trigger-Phrase, mit gemeinsamem Commit + gemeinsamer Sync-Welle. Lesson: bei agentischen Multi-Loop-Systemen lohnt es sich, Buffer-Schichten zwischen "Beobachtung" und "Aktion" einzubauen — wer die Aktion direkt mit der Beobachtung verzahnt, kriegt zu viele kleine Patches und verliert den Überblick. Die Sammelstelle ist der Buffer, der "los"-Trigger ist der Flush.
+
+**Tests:** 7 neue in [`test_p219_pre_quasi_preserved.py`](zerberus/tests/test_p219_pre_quasi_preserved.py) — 4 Klassen: `TestQuasiNotInWhisperCleanerJson` (2 — Source-Audit auf JSON: kein Pattern enthält "quasi", Filler-Regex matcht "quasi" nicht), `TestCleanTranscriptPreservesQuasi` (3 — Roundtrip: `clean_transcript` lässt "quasi" im einfachen Satz, am Satz-Anfang und neben anderen Fillern stehen; Sanity-Check dass andere Filler weiterhin gefiltert werden), `TestQuasiNotInPromptCompressorStopwords` (2 — `_STOPWORDS`-Set ohne "quasi", `compress_prompt` lässt "quasi" stehen). Alle 7 lokal grün. `test_prompt_compressor.py` (14 Tests) bleibt grün — keine Regression. Volle Suite-Differenz erwartet: +7 Tests (P218-pre-Baseline 2670 → P219-pre 2677 lokal).
+
+**Logging-Tag:** keiner — Pure-Function-Pfade, kein Server-Log betroffen.
+
+---
+
+## Vorheriger Patch
 
 **Patch 218-pre** — FAISS Dim-Mismatch-Recovery im globalen RAG-Add-Pfad (Bugfix, Pattern-Transfer aus P199) (2026-05-07)
 
@@ -1325,6 +1355,23 @@ Falls Claude Code den Sync nicht selbst ausführen kann (z. B. PowerShell nicht 
 - **Rosa Corporate Security Layer** = letzter Baustein vor kommerziellem Einsatz
 - **Telegram-Bot** als Zero-Friction-Frontend für Dritte (keine Tailscale-Installation nötig)
 
+## Supervisor-Verhalten — Bug-Sammelstelle (P219-pre)
+
+**Bug-Sammelstelle (still sammeln, nicht aktionistisch reagieren).** Wenn Chris im Supervisor-Fenster Bugs oder Issues diktiert, ohne explizit "fixen", "angehen", "los" oder "pack zusammen" zu sagen, sammelt der Supervisor diese still in einer internen Liste. Kein sofortiger Report, kein Aktionismus, kein Patch-Prompt. Erst wenn Chris explizit den Auftrag erteilt ("los", "pack zusammen", "mach daraus einen Patch"), wird ein Coda-Auftrag aus der Sammlung gebaut. Bis dahin bleibt die Liste passiv. Hintergrund: Chris denkt laut beim Sammeln; jeder Bug, der sofort in einen Patch umgesetzt würde, wäre verfrüht und würde die Sammelphase unterbrechen.
+
+**Bug-Sammelstand-Anzeige am Ende jeder Antwort.** Der Supervisor zeigt am Ende jeder Antwort den aktuellen Stand offener/gesammelter Bugs als nummerierte Liste an. Format-Vorschlag:
+
+```
+---
+**Aktuelle Bug-Sammelstelle:**
+1. [Bug-Titel] — [Kurzbeschreibung]
+2. [Bug-Titel] — [Kurzbeschreibung]
+```
+
+Wenn die Liste leer ist, wird nichts angezeigt — keine "Liste leer"-Zeile, kein Header, einfach weglassen. Funktion der Anzeige: visueller Druck. Wenn die Liste lang wird, sieht Chris das automatisch und gibt von sich aus den Auftrag, sie abzuarbeiten. Zusätzlich: alle paar Prompts oder vor erkennbarem Kontextfenster-Ende erinnert der Supervisor Chris explizit an die gesammelten Bugs ("Sammelstelle ist auf 6 Bugs gewachsen — soll ich einen Sammel-Patch bauen?"). Keine Erinnerung wenn die Liste bei ≤2 Bugs steht.
+
+**Wann die Sammelstelle in einen Coda-Auftrag mündet.** Trigger sind explizite Chris-Phrasen: "los", "pack zusammen", "mach einen Patch draus", "Coda kann jetzt", "Sammel-Patch". Nicht-Trigger: implizite Hinweise wie "das wär gut zu fixen", "irgendwann müssen wir das angehen". Im Zweifel still sammeln und beim nächsten Reminder fragen.
+
 ## Don'ts für Supervisor
 
 - **PROJEKTDOKUMENTATION.md NICHT vollständig laden** (5000+ Zeilen = Kontextverschwendung) — nur gezielt nach Patch-Nummern grep'en
@@ -1333,6 +1380,7 @@ Falls Claude Code den Sync nicht selbst ausführen kann (z. B. PowerShell nicht 
 - **Patch-Prompts IMMER als `.md`-Datei** — NIE inline im Chat. Claude Code erhält den Inhalt per Copy-Paste aus der Datei (Patch 101)
 - **Dateinamen `CLAUDE_ZERBERUS.md` und `SUPERVISOR_ZERBERUS.md` sind FINAL** — in Patch-Prompts nie mit alten Namen (`CLAUDE.md`, `HYPERVISOR.md`) referenzieren (Patch 100/101)
 - **Lokale Pfade:** Ratatoskr liegt unter `C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr\` (nicht `Rosa\Ratatoskr\`), Bmad82/Claude unter `C:\Users\chris\Python\Claude\` (nicht `Rosa\Claude\`). Patch-Prompts mit falschen Pfaden → immer erst verifizieren, nicht raten
+- **Bug-Sammelstelle NICHT als Erstreaktion in einen Patch verwandeln (P219-pre)** — siehe Sektion "Supervisor-Verhalten — Bug-Sammelstelle" oben. Erst sammeln, erst auf Trigger-Phrase warten, dann bauen.
 
 ---
 
