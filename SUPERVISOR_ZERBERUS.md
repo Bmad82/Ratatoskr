@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P213-pre-3 (2026-05-07) — Transaktional-atomarer Reindex-Endpoint. Schulden-Liste-Position #2 geschlossen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
+*Letzte Aktualisierung: P213-pre-4 (2026-05-07) — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job. Schulden-Liste-Position #8 geschlossen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
 
 ---
 
@@ -8,9 +8,45 @@
 
 Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI_REDESIGN_PROMPT.md) plus React-Mockup [`docs/NalaMockup.jsx`](docs/NalaMockup.jsx) plus erweiterte Spec [`docs/DESIGN.md`](docs/DESIGN.md) eingestellt. Aufgabe: komplettes Redesign des Nala-Chat-UI nach Mistral-Le-Chat-Vorbild plus eigene Features (Sentiment-Ambient, Scroll-Nav-Gabelung, 2-Achsen-Skalierung, Reasoning-Block, LLM-Icon, Projektseite raus aus Settings, Sidebar-Content-Shift, Layout-volle-Breite, Collapse-System, Eingabefeld-Expand). 11 Schritte als eigene Patches, dokumentiert als **Phase 5c** in [`ZERBERUS_MARATHON_WORKFLOW.md`](ZERBERUS_MARATHON_WORKFLOW.md). Kann parallel zu den Phase-5a-Folgepatches laufen — berührt nur Frontend (`zerberus/app/routers/nala.py`), nicht Backend. Bei Widerspruch zwischen `docs/DESIGN.md` und Bestand gilt DESIGN.md.
 
+**Zusatz-Bug für die UI-Session vermerkt** (gemeldet 2026-05-07 von Chris an Backend-Coda-Session `dreamy-archimedes-9c858e`, parallel zur P213-pre-4-Arbeit): Hel-Oberfläche wird im Splitscreen-Modus in der Mitte abgeschnitten — unabhängig davon wieviel Fensterplatz Hel zur Verfügung hat. Vermutung: CSS-Layout mit fixer Mittel-Breite oder absolute-Positionierung statt responsive Grid/Flex. Vermutlich in Hel-Templates (`zerberus/templates/hel*.html`) oder Hel-CSS (`zerberus/static/hel*.css`). Vollständige Bug-Beschreibung + Reproduktion in [`UI_BUG_HEL_SPLITSCREEN.md`](UI_BUG_HEL_SPLITSCREEN.md) (eigene Datei, überlebt HANDOVER-Overwrites). **Backend-Coda hat den Bug NICHT angefasst** — UI-Session ist zuständig.
+
 ---
 
 ## Aktueller Patch
+
+**Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07)
+
+Folge-Patch zu P213-pre-3. Das FAISS-BAK-MUSTER aus P213-pre-3 erstellt vor jedem Reindex eine `.pre_reindex_<UTC-Timestamp>.bak`-Kopie des alten Index-Files (`shutil.copy2`, in `.gitignore`). Bei häufigem Reindex sammeln sich diese Dateien neben den Live-Index-Files in `data/vectors/` an — niemand räumt sie auf, sie sind aber das einzige Rollback-Asset bei einem korrupten Live-Index. P213-pre-4 baut den GC-Cron-Job, der wöchentlich Sonntag 03:00 Europe/Berlin alle `.pre_reindex_*.bak`-Dateien älter als 7 Tage löscht.
+
+**Architektur: Pure-Function-Schicht plus direkter APScheduler-Hook (kein DB-Task).**
+
+- **Pure-Function-Schicht** in [`zerberus/utils/backup_gc.py`](zerberus/utils/backup_gc.py) (neue Datei): drei Funktionen ohne APScheduler/DB-Imports — `find_stale_backups(directory, *, max_age_days, glob_pattern, now_seconds)` (Glob + Mtime-Cutoff, sortiert ältester zuerst), `delete_backup_files(paths)` (best-effort, sammelt Errors statt zu raisen), `run_backup_gc(directory, *, max_age_days, glob_pattern)` (Convenience für den Scheduler-Job, niemals raisen — Cron-Job-Crash darf nicht das System killen). Konstanten `DEFAULT_BACKUP_GLOB="*.pre_reindex_*.bak"` und `DEFAULT_MAX_AGE_DAYS=7` als Source-of-Truth.
+- **Direkter APScheduler-Hook** in [`zerberus/main.py`](zerberus/main.py) im Lifespan-Manager nach `initialize_task_scheduler`: `_scheduler.add_job(run_backup_gc, trigger="cron", day_of_week="sun", hour=3, minute=0, kwargs={"directory": <vector_db_path>, "max_age_days": 7}, id="backup-gc-pre-reindex", replace_existing=True, misfire_grace_time=3600)`. Analog zum P57 Overnight-Job — kein DB-Task, weil System-Maintenance (User soll's nicht versehentlich aus der Hel-UI disablen können). Logging-Tag `[BACKUP-GC]` mit Vor/Nach-Counts und Bytes-Freed.
+- **`vector_db_path`-Auflösung** aus `settings.modules["rag"]["vector_db_path"]` mit Default `./data/vectors` — gleicher Pfad wie `_resolve_paths` in `router.py` (P213-pre-2 dual-aware). Kein neuer Settings-Eintrag nötig.
+
+**Was P213-pre-4 bewusst NICHT macht:**
+
+- **Keine User-konfigurierbare Aufbewahrungsfrist.** 7 Tage ist Konstante in `DEFAULT_MAX_AGE_DAYS`. Ein Settings-Eintrag wäre Feature-Add ohne klaren ROI für den Bugfix. Tuning kann später kommen wenn die Bytes-Freed-Logs zeigen dass 7 Tage zu kurz/lang sind.
+- **Keine Audit-DB-Tabelle.** Die `[BACKUP-GC]`-Log-Lines im Server-Log sind ausreichend für ein System-Maintenance-Job. Ein DB-Audit wäre Overengineering — `scheduled_task_runs` ist für User-konfigurierte Tasks.
+- **Keine Hel-UI-Anzeige.** Konsequent zur Architektur-Entscheidung "System-Maintenance, nicht Projekt-Task". Der Job läuft im Hintergrund.
+- **Kein `kind=shell` mit `find -mtime`.** Erste Versuchung war den HANDOVER-Vorschlag wörtlich zu nehmen (`kind=shell` mit `find data/vectors -mtime +7 -delete`). Verworfen weil `_execute_kind_shell` `project_id` braucht (P214-pre-3-Workspace-Mount-Defense), und ein globaler Maintenance-Job hat keinen Projekt-Workspace. Plus Pure-Python ist testbar ohne Sandbox-Dependency.
+- **Keine Glob-Recursion.** Backups liegen per Konvention direkt im `vector_db_path` neben dem Live-Index (siehe `_resolve_paths` in `router.py`). Ein `**`-Glob würde nach Tests, Backups in Subverzeichnissen etc. suchen — nicht der Scope.
+
+**Lessons (3):**
+
+1. **System-Maintenance-Cron-Jobs gehören NICHT in die User-konfigurierbare Task-Tabelle.** Lieber direkt am APScheduler analog dem P57-Overnight-Job — User-konfigurierbare Tasks (DB + UI + Disable-für-User) und System-Maintenance-Tasks (Code + immer-an + nicht User-sichtbar) sind zwei Ebenen. Spart auch Task-Kind-Wahl und Default-Seed-Mechanismus.
+2. **Pure-Function-Schicht plus Cron-Hook als minimaler Zwei-File-Patch.** Kein DB-Setup, kein neuer Task-Kind, keine Whitelist-Erweiterung. Source-Audit-Tests prüfen die Verdrahtung in `main.py`. 31 Tests, ein einziges DB-Setup-File nicht angefasst.
+3. **`os.utime`+`now_seconds`-Override macht GC-Tests deterministisch ohne `time.sleep`.** Anti-Pattern: 8 Sekunden warten, dann prüfen dass eine 7-Sekunden-Cutoff-Regel greift (langsam + flaky). Pro-Pattern: Pure-Function nimmt optionalen `now_seconds`-Parameter, Test setzt mtime via `os.utime` + ruft mit gefakter Now-Zeit auf. Auch unter Windows portabel.
+
+**Tests:** 31 neue in [`test_p213_pre_4_backup_gc.py`](zerberus/tests/test_p213_pre_4_backup_gc.py) — fünf Klassen: `TestFindStaleBackups` (12), `TestDeleteBackupFiles` (5), `TestRunBackupGC` (6), `TestSourceAuditMainPyHook` (5 — Import in main.py + Job-ID + add_job-Aufruf + Cron-Trigger + P213-pre-4-Tag), `TestSmoke` (3). Alle 31 lokal grün. P214-pre-3-Tests + P213-pre-3-Tests bleiben grün (57/57 zusammen verifiziert) — keine Regression.
+
+**Volle Unit-Suite:** **2722 passed lokal erwartet** (+31 P213-pre-4 auf 2691-Baseline). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — P213-pre-4 ist Folge-Bugfix außerhalb der Phase-5a-Ziele, schließt aber HANDOVER-Schulden-Liste-Position #8 (vorher als "niedrigster verbleibender Aufwand" markiert).
+
+**UI-Bug-Notiz mit-committet:** Diese Session hat zusätzlich [`UI_BUG_HEL_SPLITSCREEN.md`](UI_BUG_HEL_SPLITSCREEN.md) erstellt — ein Hel-Splitscreen-Layout-Bug den Chris parallel gemeldet hat. Nicht angefasst, weil eine Parallel-Session am UI-Redesign arbeitet. Datei dient als Persistenz-Anker für die UI-Session, der HANDOVER-Overwrites überlebt.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **Patch 213-pre-3** — Transaktional-atomarer Reindex-Endpoint (HANDOVER-Schulden-Liste #2 geschlossen) (2026-05-07)
 

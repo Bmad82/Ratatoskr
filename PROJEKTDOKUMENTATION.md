@@ -8623,6 +8623,68 @@ Alle 7 lokal grün. Existierende `test_prompt_compressor.py` (14 Tests) bleibt g
 
 ---
 
+## Patch 213-pre-4 (2026-05-07) — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen)
+
+**Auslöser.** Folge-Patch zu P213-pre-3. Das FAISS-BAK-MUSTER aus P213-pre-3 erstellt vor jedem Reindex eine `.pre_reindex_<UTC-Timestamp>.bak`-Kopie des alten Index-Files (`shutil.copy2`, in `.gitignore`). Bei häufigem Reindex sammeln sich diese Dateien neben den Live-Index-Files in `data/vectors/` an — niemand räumt sie auf, sie sind aber das einzige Rollback-Asset bei einem korrupten Live-Index. Die HANDOVER-Schulden-Liste-Position #8 markierte das als "niedrigster verbleibender Aufwand (~1h)". P213-pre-4 schließt diese Schulden-Position.
+
+**Architektur.** Pure-Function-Schicht plus direkter APScheduler-Hook. **Kein DB-Task.**
+
+- **Pure-Function-Schicht** in [`zerberus/utils/backup_gc.py`](../zerberus/utils/backup_gc.py) (neue Datei, ~180 LOC). Drei Funktionen ohne APScheduler/DB-Imports — daher testbar ohne externe Dependencies:
+    - `find_stale_backups(directory, *, max_age_days=7, glob_pattern="*.pre_reindex_*.bak", now_seconds=None) -> list[Path]` — Glob im directory, Filter auf mtime < (now - N*86400), sortiert ältester zuerst (deterministisch fürs Test-Logging). `now_seconds`-Override macht Tests deterministisch ohne `time.sleep`. Verzeichnis-fehlt → leere Liste (kein Crash). Negative `max_age_days` → ValueError.
+    - `delete_backup_files(paths) -> dict` — best-effort-Loop, sammelt Errors statt zu raisen. Returnt `{deleted_count, bytes_freed, errors: list[(Path, str)]}`. Einzelne `OSError` blockieren nicht die restlichen Löschungen.
+    - `run_backup_gc(directory, *, max_age_days, glob_pattern) -> dict` — Convenience für den Scheduler-Job. Niemals raisen — Cron-Job-Crash darf nicht das System killen. Returnt `{scanned_dir, max_age_days, stale_count, deleted_count, bytes_freed, errors_count}`. Logged mit `[BACKUP-GC]`-Tag (Vor/Nach-Counts + Bytes-Freed).
+    - Konstanten `DEFAULT_BACKUP_GLOB = "*.pre_reindex_*.bak"` und `DEFAULT_MAX_AGE_DAYS = 7` als Source-of-Truth.
+- **Direkter APScheduler-Hook** in [`zerberus/main.py`](../zerberus/main.py) im Lifespan-Manager nach `initialize_task_scheduler` — analog dem P57-Overnight-Job (`zerberus.modules.sentiment.overnight.create_scheduler`). Code:
+  ```python
+  _scheduler.add_job(
+      run_backup_gc,
+      trigger="cron",
+      kwargs={"directory": _gc_dir, "max_age_days": DEFAULT_MAX_AGE_DAYS},
+      day_of_week="sun",
+      hour=3,
+      minute=0,
+      id="backup-gc-pre-reindex",
+      replace_existing=True,
+      misfire_grace_time=3600,
+  )
+  ```
+  Wenn der Scheduler-Init geskipt wurde (`_scheduler is None`), läuft der Hook nicht — Lifespan-Log: `Backup-GC skip — kein APScheduler`.
+- **`vector_db_path`-Auflösung** aus `settings.modules["rag"]["vector_db_path"]` mit Default `./data/vectors` — gleicher Pfad wie `_resolve_paths` in `router.py` (P213-pre-2 dual-aware). Kein neuer Settings-Eintrag nötig.
+
+**Was P213-pre-4 bewusst NICHT macht.**
+
+- **Keine User-konfigurierbare Aufbewahrungsfrist.** 7 Tage ist Konstante in `DEFAULT_MAX_AGE_DAYS`. Ein Settings-Eintrag wäre Feature-Add ohne klaren ROI für den Bugfix. Tuning kann später kommen wenn die Bytes-Freed-Logs zeigen dass 7 Tage zu kurz/lang sind.
+- **Keine Audit-DB-Tabelle.** Die `[BACKUP-GC]`-Log-Lines im Server-Log sind ausreichend für ein System-Maintenance-Job. Ein DB-Audit wäre Overengineering — `scheduled_task_runs` ist für User-konfigurierte Tasks.
+- **Keine Hel-UI-Anzeige.** Konsequent zur Architektur-Entscheidung "System-Maintenance, nicht Projekt-Task". Der Job läuft im Hintergrund.
+- **Kein `kind=shell`-Task mit `find -mtime`.** Erste Versuchung war den HANDOVER-Vorschlag wörtlich zu nehmen (`kind=shell` mit `find data/vectors -mtime +7 -delete`). Verworfen weil `_execute_kind_shell` `project_id` braucht (P214-pre-3-Workspace-Mount-Defense), und ein globaler Maintenance-Job hat keinen Projekt-Workspace. Plus Pure-Python ist testbar ohne Sandbox-Dependency und ohne `bash`-`allowed_languages`-Opt-In.
+- **Keine Glob-Recursion.** Backups liegen per Konvention direkt im `vector_db_path` neben dem Live-Index (siehe `_resolve_paths` in `router.py`). Ein `**`-Glob würde nach Tests, Backups in Subverzeichnissen etc. suchen — nicht der Scope.
+
+**Lessons (3).**
+
+1. **System-Maintenance-Cron-Jobs gehören NICHT in die User-konfigurierbare Task-Tabelle.** Lieber direkt am APScheduler analog dem P57-Overnight-Job — User-konfigurierbare Tasks (DB + UI + Disable-für-User) und System-Maintenance-Tasks (Code + immer-an + nicht User-sichtbar) sind zwei Ebenen. Spart auch Task-Kind-Wahl und Default-Seed-Mechanismus. Lesson generalisierbar: bei Task-Systemen mit User-CRUD immer fragen — ist dieser Task User-konfigurierbar oder System-Maintenance? Wenn System-Maintenance: nicht durch das User-CRUD-System, sondern direkt am Scheduler.
+2. **Pure-Function-Schicht plus Cron-Hook als minimaler Zwei-File-Patch.** Kein DB-Setup, kein neuer Task-Kind, keine Whitelist-Erweiterung. Source-Audit-Tests prüfen die Verdrahtung in `main.py`. 31 Tests, ein einziges DB-Setup-File nicht angefasst. Lesson: wenn ein Patch nur Pure-Function-Logik plus eine Verdrahtungs-Stelle hat, brauchen die Tests keine Integration-Fixtures — Pure-Function-Tests für die Logik plus Source-Audit-Tests für die Verdrahtung reichen.
+3. **`os.utime`+`now_seconds`-Override macht GC-Tests deterministisch ohne `time.sleep`.** Anti-Pattern: 8 Sekunden warten, dann prüfen dass eine 7-Sekunden-Cutoff-Regel greift (langsam + flaky bei CI-Last-Spitzen). Pro-Pattern: Pure-Function nimmt optionalen `now_seconds`-Parameter mit Default `None` (fällt auf live-time zurück), Test setzt mtime via `os.utime(path, (now-age_seconds, now-age_seconds))` + ruft mit gefakter Now-Zeit auf. Lesson generalisierbar: jeder Pfad, der `time.time()` ODER `datetime.utcnow()` aufruft, sollte einen `now`-Parameter mit Default `None` anbieten — dann bleiben die Tests deterministisch und schnell ohne externe Mock-Lib. Plus: `os.utime` ist der portable Weg ein File-mtime für Tests zu fakeen — auch unter Windows.
+
+**Tests.** 31 neue Tests in [`test_p213_pre_4_backup_gc.py`](../zerberus/tests/test_p213_pre_4_backup_gc.py), fünf Klassen:
+
+- **`TestFindStaleBackups`** (12) — old-backups-returned, fresh-skipped, mixed-ages, non-backup-files-ignored, missing-directory, directory-is-file, max-age-zero-includes-all, negative-max-age-raises, sorted-by-mtime-oldest-first, glob-pattern-override, now-seconds-override, string-directory-accepted.
+- **`TestDeleteBackupFiles`** (5) — deletes-files, bytes-freed-sums-sizes, missing-file-recorded-as-error, partial-failure-continues, empty-input-returns-zero.
+- **`TestRunBackupGC`** (6) — happy-path, no-stale-backups-no-op, missing-directory-no-crash, result-dict-has-expected-keys, string-directory-accepted, default-max-age-used.
+- **`TestSourceAuditMainPyHook`** (5) — main.py-imports-run-backup-gc, main.py-registers-backup-gc-job-id, main.py-calls-add-job-with-run-backup-gc, main.py-uses-sunday-cron-trigger, p213-pre-4-tag-present.
+- **`TestSmoke`** (3) — module-exports, default-glob-matches-p213-pre-3-pattern, default-max-age-seven-days.
+
+Alle 31 lokal grün. P214-pre-3-Tests + P213-pre-3-Tests bleiben grün (57/57 zusammen verifiziert) — keine Regression.
+
+Volle Unit-Suite: 2691 Baseline (P213-pre-3) + 31 neue P213-pre-4 = **2722 passed lokal erwartet**.
+
+**Schulden-Status.** P213-pre-4 schließt HANDOVER-Schulden-Liste-Position #8 (Backup-Garbage-Collection). Verbleibende Schulden unverändert von P213-pre-3: Pacemaker-Master-Toggle UI-Layout-Drift (#3, höherer Aufwand), TTS-Race-Condition-Pipeline-Audit (#4), Settings-Cog-Mobile-UX-Frage (#5), 4 pre-existing Unit-Test-Failures (#6 — Doku-Drift), EN-Side-Add-Pfad differenzieren (#7, Folge-Patch zu P218-pre). **Plus neuer Eintrag:** UI-Bug "Hel-Splitscreen mittig abgeschnitten" (Chris gemeldet 2026-05-07) — siehe [`UI_BUG_HEL_SPLITSCREEN.md`](../UI_BUG_HEL_SPLITSCREEN.md). Nicht von Backend-Coda angefasst, weil Parallel-Session am UI-Redesign arbeitet.
+
+---
+
+*Stand: 2026-05-07, Patch P213-pre-4 — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (Folge-Patch zu P213-pre-3). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — Folge-Patch außerhalb der Phase-5a-Ziele. Unit-Suite **2722 passed lokal erwartet** (+31 P213-pre-4 auf 2691-Baseline), e2e-Sweep unverändert (78 passed / 7 skipped / 0 failed). HANDOVER-Schulden-Liste-Position #8 (Backup-GC) ist zu, war "niedrigster verbleibender Aufwand". Plus mit-committet: UI-Bug-Notiz `UI_BUG_HEL_SPLITSCREEN.md` als Persistenz-Anker für die Parallel-Session.*
+
+---
+
 ## Patch 213-pre-3 (2026-05-07) — Transaktional-atomarer Reindex-Endpoint (HANDOVER-Schulden-Liste #2 geschlossen)
 
 **Auslöser.** HANDOVER-Schulden-Liste-Position #2 aus der P213-pre-Saga: `POST /hel/admin/rag/reindex` crashte mit HTTP 500 wenn ein Encoder-Fehler mitten im Re-Build auftrat — UND lies dabei den FAISS-Index leer auf Disk zurück (Datenverlust). Anti-Pattern in der ursprünglichen Implementierung in [`hel.py::rag_reindex`](../zerberus/app/routers/hel.py): erst `await asyncio.to_thread(_reset_sync, settings)` (Index + Metadata leeren + persistieren), DANN ein Loop mit `_encode` + `_add_to_index`. Wenn der Loop mitten drin crashte (GPU OOM, Modell-Lade-Fehler, Embedder-Dim-Switch zwischen Sessions), blieb der gerade geleerte Index leer auf Disk. Jeder weitere Server-Start lud diesen leeren Index — Userdaten weg. Bug war seit P213-pre als HANDOVER-Schuld dokumentiert; jetzt geschlossen.
