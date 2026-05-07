@@ -1,10 +1,45 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P217-pre (2026-05-07) – `sync_repos.ps1` Quote-Escape-Fix (Tooling-Schuld geschlossen). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — alle 18 Ziele zu, kein Code-Pfad berührt.*
+*Letzte Aktualisierung: P218-pre (2026-05-07) – FAISS Dim-Mismatch-Recovery im globalen RAG-Add-Pfad. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN — der Patch heilt einen Bugfix-Pfad ausserhalb der Phase-5a-Ziele.*
 
 ---
 
 ## Aktueller Patch
+
+**Patch 218-pre** — FAISS Dim-Mismatch-Recovery im globalen RAG-Add-Pfad (Bugfix, Pattern-Transfer aus P199) (2026-05-07)
+
+Chris hat den Bug zweimal gemeldet (2026-05-06 und 2026-05-07): `POST /hel/admin/rag/upload` wirft HTTP 500 mit `AssertionError: assert d == self.d` aus `_index.add(vec)` in [`zerberus/modules/rag/router.py`](zerberus/modules/rag/router.py). Ursache: der DualEmbedder (P187) liefert je nach aktivem Modell unterschiedliche Dimensionen (DE=768 via `cross-en-de-roberta`, EN=1024 via `multilingual-e5-large`, Legacy=384 via `MiniLM`); wenn der Index-on-Disk mit Dim X gebaut wurde und der aktive Embedder Dim Y produziert (GPU/CPU-Wechsel oder Modell-Switch zwischen Patches), kracht FAISS deterministisch im Add-Pfad. Der globale RAG hatte das Pattern bisher NICHT, der Per-Projekt-RAG (P199) hat es seit Monaten gelöst.
+
+**Architektur: Pattern-Transfer aus P199 — Helper plus Dim-Check plus WARN-Log plus persistierender Reset.**
+
+- **Neuer Helper** `_reset_index_inplace(target_dim, settings)` in [`router.py`](zerberus/modules/rag/router.py): baut globalen `_index` neu mit `faiss.IndexFlatL2(target_dim)`, leert `_metadata`, persistiert Index+Meta via `_resolve_paths(settings, dual_aware=True)` damit der nächste Server-Start den frischen Index am Dual-Storage-Pfad liest (`de.index`/`de_meta.json` bei `_use_dual=True`, sonst Legacy-Pfade). Nicht thread-safe gegenüber konkurrenten `_add_to_index` — der Add-Pfad ist Singleton-Thread (siehe `index_document`-Endpoint via `asyncio.to_thread`).
+- **Dim-Check in `_add_to_index`** vor `_index.add(vec)`: wenn `_index is None` ODER `_index.d != int(vec.shape[1])`, dann WARN-Log mit `[RAG-218]`-Tag (alte Dim + alte Vektor-Anzahl + neue Dim + Hinweis "Reindex empfohlen") und Aufruf `_reset_index_inplace(incoming_dim, settings)`. Anschliessend `_index.add(vec)` — sicher, weil `_index` jetzt die passende Dim hat. Pattern direkt aus P199 `index_project_file` (vstack-Recovery), siehe lessons.md-Zeile "Embedder-Dim-Wechsel zwischen Sessions toleriert".
+- **Recovery ist verlustbehaftet** — alte Chunks gehen weg (sie passten ohnehin nicht mehr zum aktiven Embedder). WARN-Log macht das transparent. Folge-Aktion: `POST /hel/admin/rag/reindex` (oder Sync-Skript erneut laufen) lädt den Korpus neu.
+- **Dual-Modus-Coverage:** `_add_to_index` schreibt aktuell nur nach DE-Index (siehe bestehender Doc-Kommentar zu EN-Side-Chunks als Folge-Patch). EN-Index in `_init_sync` ist read-only — Dim-Mismatch dort tritt beim Search-Pfad auf, aber `faiss.search()` ist tolerant. Wenn EN-Add-Pfad jemals differenziert wird, kann der Helper 1:1 wiederverwendet werden.
+
+**Was P218-pre bewusst NICHT macht:**
+
+- **Kanonische Index-Dimension erzwingen** ("immer 768 projizieren") — ist Feature-Patch (Strategie a aus dem Bug-Report), nicht Bugfix. Auto-Reset löst den akuten Schmerz, ohne den DualEmbedder umzubauen.
+- **`_DIM = 384`-Konstante entfernen.** Wird nur im Legacy-Pfad (`_load_or_create_index` und `_reset_sync`) verwendet, der bei `_use_dual=True` ohnehin nicht läuft. Auto-Reset im Add-Pfad heilt einen falschen Initial-Wert transparent.
+- **Reindex-Endpoint transaktional machen** (Schulden-Liste #2, P213-pre-3) — separater Patch, bleibt nach P218-pre der niedrigste verbleibende Aufwand.
+- **EN-Side-Add-Pfad differenzieren** — der bestehende Doc-Kommentar nennt das als Folge-Patch. Aktuell nicht im Hot-Path (Sync-Tool lädt einsprachige Korpusse, mehrsprachiger Add ist Folge-Patch).
+- **Hel-UI-Card "Reindex empfohlen"-Banner** — die WARN-Zeile im Server-Log reicht für die Bug-Suche, ein UI-Banner wäre Feature-Add ohne klaren ROI.
+
+**Lessons (3):**
+
+1. **Pattern aus Projekt-Variante in globale Variante übertragen lohnt sich.** P199 hatte das Dim-Mismatch-Problem bereits sauber gelöst (vstack-Recovery + WARN-Log) und der Patch war seit 2026-04-26 stabil. Der globale Pfad hatte das Pattern nicht — Coda hat zwei Sessions versucht, den Bug woanders zu suchen. Lesson: bei wiederkehrenden FAISS/Embedder-Symptomen zuerst lessons.md grep nach "Embedder-Dim", dann die Schwester-Pfade vergleichen.
+2. **`_FakeIndex`-Stubs sollten das echte Library-Verhalten nachahmen, nicht no-op werden.** Der bestehende Stub in `test_p213_pre_2_dual_storage.py` hatte `add(vec)` als no-op `self.ntotal += 1` ohne Dim-Check. Mein neuer Stub in `test_p218_pre_dim_mismatch.py` macht das echte Fail-Verhalten nach (`assert vec.shape[1] == self.d`) — wenn ein zukünftiger Refactor den Recovery-Pfad rauseditiert, knallen die Tests in derselben Stelle wie Production. Source-Audit-Tests greifen so zuverlässig.
+3. **WARN-Log bei verlustbehafteter Recovery ist Pflicht — sonst sieht niemand den Datenverlust.** `[RAG-218]`-Tag mit alter+neuer Dim + alter Vektor-Anzahl macht den Mismatch in der Log-Aggregation auffindbar und nennt "Reindex empfohlen" als Folge-Aktion. Anti-Pattern wäre stilles Auto-Reset — der nächste Search wundert sich dann über leere Treffer.
+
+**Tests:** 15 neue in [`test_p218_pre_dim_mismatch.py`](zerberus/tests/test_p218_pre_dim_mismatch.py) plus 1 Stub-Erweiterung in [`test_p213_pre_2_dual_storage.py`](zerberus/tests/test_p213_pre_2_dual_storage.py). 4 Test-Klassen: `TestAddToIndexNoMismatch` (2 — Hot-Path: passende Dim macht keinen Reset), `TestAddToIndexDimMismatch` (7 — die drei Pflicht-Fälle aus dem Bug-Report plus Edge-Cases: bestehende Chunks + Reset, leerer Index + Reset, dual-aware-Persistierung, Legacy-Pfad-Persistierung, Metadata-Komplett-Clear, Total-Return-nach-Rebuild, `_index is None`-Defensive), `TestResetIndexInplaceHelper` (3 — Helper direkt: erstellt leeren Index, persistiert via DE-Pfad bei Dual, persistiert via Legacy-Pfad sonst), `TestSourceWiring` (3 — Defense-in-Depth: Helper exportiert, `_add_to_index` ruft Helper, `[RAG-218]`-Tag im Source). Alle 15 grün lokal. P213-pre-2-Stub erweitert um `d=384`-Default — die 27 P213-pre-2-Tests bleiben grün.
+
+Volle Unit-Suite: 2655 Baseline (P216) + 15 neue P218-pre = **2670 passed lokal erwartet** (im Worktree-Lauf 2661 passed wegen 9 pre-existing Failures: 5 Doku-Drift in `test_p210/test_p213_pre_4` durch P217-pre-Stand-Anker-Aufsplittung, plus 4 HANDOVER-bekannte Failures + 2 Worktree-Setup-Drift). **Bonus durch Doku-Update:** der `**Letzter Patch:**`-Marker in `huginn_kennt_zerberus.md` heilt die 5 Doku-Failures aus `test_p210/test_p213_pre_4` — die zählen also nach diesem Patch nicht mehr als Failures. Erwartete Hauptrepo-Baseline nach P218-pre: **2670 passed**.
+
+**Logging-Tag:** `[RAG-218]` mit Sub-Event `Dim-Mismatch beim Index-Add: alte Dim={old_dim}, alte Vektoren={old_ntotal}, neue Dim={incoming_dim}. Index wird mit der neuen Dimension neu aufgebaut (Embedder-Wechsel zwischen Sessions). Alte Chunks gehen verloren — Reindex empfohlen.` Worker-Protection-konform: kein User-Content im Log, nur Dim-Metriken.
+
+---
+
+## Vorheriger Patch
 
 **Patch 217-pre** — `sync_repos.ps1` Quote-Escape-Fix (Tooling-Schuld #1 aus dem 2026-05-05-HANDOVER geschlossen) (2026-05-07)
 
