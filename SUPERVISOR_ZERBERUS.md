@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P213-pre-4 (2026-05-07) — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job. Schulden-Liste-Position #8 geschlossen. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN.*
+*Letzte Aktualisierung: P-UI-1 + P213-pre-4 (2026-05-07, parallel) — Phase 5c Schritt 1 (Layout-Umbau auf volle Bildschirmbreite) und Backend-Folge-Patch FAISS-Reindex-Backup-Garbage-Collection. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft, Schulden-Liste-Position #8 geschlossen.*
 
 ---
 
@@ -14,7 +14,40 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 
 ## Aktueller Patch
 
-**Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07)
+**P-UI-1** — Phase 5c Schritt 1: Layout-Umbau auf volle Bildschirmbreite (2026-05-07)
+
+Erster Code-Patch der UI-Redesign-Phase. Bubbles (`.message`) und ihr Wrapper (`.msg-wrapper`) sind jetzt auf `max-width: 100%` und `align-self: stretch` gesetzt — vorher 92% Mobile / 80% Desktop und `flex-end`/`flex-start`. Effekt: User-Eingaben und LLM-Antworten füllen die volle Breite des App-Containers (500 px Mobile-First-Frame). Kein Avatar-Einzug links. Visuelle User-vs-LLM-Unterscheidung bleibt erhalten über (1) Hintergrundfarbe (Akzent-Pink für User, Primary-Mid für LLM) und (2) Border-Radius-Tail (unten links für User, unten rechts für LLM).
+
+**Architektur: zwei CSS-Edits + Source-Audit-Tests + DESIGN.md-[WERT]-Befüllung.**
+
+- **CSS-Edit 1 — `.message`** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `max-width: 92%` → `max-width: 100%`. Plus die `@media (min-width: 768px) { .message { max-width: 80%; } }`-Regel entfernt. Bubble-Shine (P139), Long-Message-Collapse (P124), Animation, Border-Radius-Tail, Box-Shadow alle erhalten.
+- **CSS-Edit 2 — `.user-message` / `.bot-message` / `.msg-wrapper` / `.msg-wrapper.user-wrapper`** in derselben Datei: `align-self: flex-end`/`flex-start` → `align-self: stretch`. Plus `.msg-wrapper { max-width: 92% }` → `100%` und der entsprechende Desktop-Cap entfernt. **Wichtig:** ohne den Wrapper-Edit greift der `.message`-Edit nicht — der Wrapper hatte den 92%-Cap.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_1_layout.py`](zerberus/tests/test_p_ui_1_layout.py): vier Klassen (16 Tests) — `TestSourceWiringLayout` (max-width 100%, kein 92%/80%-Cap, align-self stretch in allen vier Selektoren), `TestNoAvatarPattern` (kein .avatar/.msg-avatar im CSS, kein `class="avatar"` im HTML — zementiert das bestehende Anti-Pattern), `TestBestehendeFeaturesPreserved` (Shine-Radial-Gradient bleibt, Long-Message-Collapse bleibt, messageSlideIn bleibt, Box-Shadow bleibt, Border-Radius-Tail bleibt), `TestPUiOneInlineMarker` (P-UI-1-Tag im Source).
+- **Existing Tests in `test_nala_bubble_layout.py`** (P139 B-008) angepasst: `TestBubbleBreite::test_bubble_max_width_volle_breite` und `test_msg_wrapper_volle_breite` prüfen jetzt 100% statt 92%. Inline-Kommentar mit `P-UI-1`-Tag dokumentiert den Update-Pfad.
+- **`docs/DESIGN.md`-[WERT]-Befüllung** aus dem `:root`-Block in `nala.py`: Sektion 1.1 Kernfarben (Primary `#f0b429`, Hover `#c8941f`, Muted `rgba(240,180,41,0.10)`, Mid `#1a2f4e`, Accent `#ec407a`), 1.2 Hintergründe (App `#0a1628`, Surface `#1a2f4e`, Sidebar `#1a2f4e`, Input `#0a1628`), 1.3 Textfarben (Primary `#e8eaf0`, Secondary `#8aa0c0`, Disabled `#6a8ab8`, On-Primary `#0a1628`, Link `#f0b429`), 1.4 Statusfarben (Warning `#f0b429`, Error `#ff6b6b`), 1.5 Randfarben (Standard `#2a4068`, Light `rgba(240,180,41,0.22)`, Focus `#f0b429`, Error `#ff6b6b`), 1.6 Spezialfarben (Bubble-User-Text `#0a1628`, Bubble-Bot-Text `#e8eaf0`, Overlay `rgba(0,0,0,0.6)`, Shadow `rgba(0,0,0,0.3)`), 2.1 Fonts (`'Segoe UI', Roboto, system-ui, sans-serif`), 3.2 Border-Radius (sm 8px, md 12px, lg 20px), 3.5 Layout-Grundregel (Content Max-Width 500 px). Restliche [WERT]-Platzhalter (Spacing, Z-Index, Shadow-Stufen, Komponenten-Padding/MinHeight, Animation-Timings) bleiben offen — werden in UI-2 bis UI-11 sukzessive ergänzt sobald die jeweilige Komponente angefasst wird.
+
+**Was P-UI-1 bewusst NICHT macht:**
+
+- **Bubble-Padding ändern.** Mockup hat enge `padding: 6px 16px` (User) / `10px 16px` (LLM). Bestehender Wert `13px 18px` bleibt — gehört in UI-2 (Collapse-System) zusammen mit dem Toggle-Layout.
+- **Container-Padding ändern.** `.chat-messages padding: 20px` bleibt. Mockup hat `padding: 12px 0` (kein Horizontal-Padding) — Anpassung wäre Scope-Sprengung in UI-1; gehört zu UI-3 (Eingabefeld) oder UI-9 (Skalierung).
+- **Border-Radius-Tail vereinheitlichen.** Mockup nutzt symmetrisches `border-radius: 10px`. Bestehender Tail (User unten links, LLM unten rechts) bleibt — visuelle User-vs-LLM-Hilfe bleibt erhalten, gerade weil bei voller Breite der Tail das einzige asymmetrische Detail ist.
+- **Avatar-Element einführen.** Es gab kein Avatar im Bestand und der Prompt verbietet es explizit. `TestNoAvatarPattern` zementiert das.
+- **Restliche [WERT]-Platzhalter befüllen.** Sektionen 3.1 Spacing, 3.4 Z-Index, 4.x Komponenten (Padding, Min-Höhe, Hover-Effekte), 7. Schatten, Animation-Timings (`--transition-fast`, `--transition-slow`) bleiben `[WERT]`. Befüllung im jeweiligen Folge-Patch.
+- **Hel-Splitscreen-Bug** (siehe [`UI_BUG_HEL_SPLITSCREEN.md`](UI_BUG_HEL_SPLITSCREEN.md)). Aufgenommen für UI-Folge-Patch in Phase 5c — nicht im Scope von UI-1 (Nala-Frontend, nicht Hel-Templates).
+
+**Lessons (1):**
+
+1. **Volle Bubble-Breite braucht zwei CSS-Edits, nicht einen.** Wenn ein äußerer Wrapper die Breite limitiert, greift `max-width: 100%` auf der inneren Bubble nicht. Erst wenn beide (Wrapper und Bubble) auf 100% + `align-self: stretch` gesetzt sind, wird die volle Breite real. Generalisierbar auf jede CSS-Layout-Änderung in geschachtelten Containern: vor dem Edit die Container-Hierarchie ablaufen und entscheiden, auf welcher Ebene der Cap sitzt. Plus: `align-self: stretch` und `max-width` müssen gemeinsam geändert werden — `max-width` hat Vorrang vor `stretch`. Siehe [`lessons.md`](lessons.md) Sektion „Volle Bubble-Breite braucht ZWEI CSS-Edits".
+
+**Tests:** 16 neue in [`zerberus/tests/test_p_ui_1_layout.py`](zerberus/tests/test_p_ui_1_layout.py) (vier Klassen). 2 angepasste in [`test_nala_bubble_layout.py`](zerberus/tests/test_nala_bubble_layout.py) (P139 B-008 → P-UI-1). Alle 31 grün lokal. Volle Suite-Erwartung mit P213-pre-4 dazu: **2722 + 16 = 2738 passed lokal erwartet** (P213-pre-4 brachte 31 auf 2691er-Baseline; P-UI-1 bringt 16 auf 2722).
+
+**Logging-Tag:** keiner — P-UI-1 ist reines CSS-Layout, kein neuer Code-Pfad.
+
+---
+
+## Vorheriger Patch
+
+**Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07, parallel zu P-UI-1)
 
 Folge-Patch zu P213-pre-3. Das FAISS-BAK-MUSTER aus P213-pre-3 erstellt vor jedem Reindex eine `.pre_reindex_<UTC-Timestamp>.bak`-Kopie des alten Index-Files (`shutil.copy2`, in `.gitignore`). Bei häufigem Reindex sammeln sich diese Dateien neben den Live-Index-Files in `data/vectors/` an — niemand räumt sie auf, sie sind aber das einzige Rollback-Asset bei einem korrupten Live-Index. P213-pre-4 baut den GC-Cron-Job, der wöchentlich Sonntag 03:00 Europe/Berlin alle `.pre_reindex_*.bak`-Dateien älter als 7 Tage löscht.
 
