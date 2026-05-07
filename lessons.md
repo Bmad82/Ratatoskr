@@ -716,3 +716,16 @@ Der hartnäckigste Bug in Zerberus. Vier Patches, drei Fehldiagnosen, ein Endgeg
 - Audit-Trail als separate Tabelle, nicht als JSON-Spalte in `interactions`|`code_executions` mit eigenen Spalten (pending_id/session_id/project_id/language/exit_code/hitl_status/...) ist queryable ohne JSON-extract, indizierbar nach `hitl_status`, und sauber von der Sentiment-Sicht in `interactions` getrennt|JSON-Spalte waere flexibler, aber langsamer fuer Aggregat-Queries und schwerer fuer Hel-Admin-Reports|Lesson: wenn ein Audit-Schema stabil ist und Aggregat-Queries kommen werden (z.B. "wieviele Rejects in den letzten 7 Tagen pro Projekt?"), separate Tabelle mit Spalten — nicht JSON
 - Test-Bypass via Feature-Flag-Monkeypatch in Test-Fixtures, nicht durch Test-Refactoring|wenn ein neuer Default-ON Feature-Flag bestehende Tests blockt, der nichts mit dem Feature zu tun hat: `monkeypatch.setattr(get_settings().projects, "hitl_enabled", False)` in der Test-`_setup`-Helper-Funktion|nicht jeden Test umbauen oder mocken — der Bypass im gemeinsamen Fixture ist eine Zeile Code statt zehn|gilt fuer jeden zukuenftigen Default-ON-Flag der eine quere Pipeline aktiviert (Guard, Telemetrie, Cache) — Test-Fixtures sind die richtige Schutz-Schicht
 - Wait-for-Decision-Mock vermeidet 60-Sekunden-Wartezeit in End-to-End-Tests|`monkeypatch.setattr(ChatHitlGate, "wait_for_decision", fake_wait)` mit synchroner Decision-Lieferung — kein echter `asyncio.wait_for` mit echtem Timeout|Trick: das gemockte `fake_wait` flippt direkt den `_pendings[id].status` auf den gewuenschten Wert + returnt — Konsistenz mit dem echten Lifecycle ohne den Wait selbst|Pattern fuer alle Tests die Long-Poll-Endpoints durchgehen wollen: nicht den Long-Poll testen (das macht ein dedizierter Test), sondern die Decision-Logik downstream
+
+## Destruktive Operationen — Industrie-Lektionen (2025-2026)
+
+QUELLE: DataTalks.Club (März 2025) — Terraform destroy ohne State-Datei → 2,5 Jahre
+Daten weg inkl. Snapshots. PocketOS (Mai 2026) — Credential-Problem → Agent löscht
+ganzes Railway-Volume in 9 Sekunden inkl. Backups.
+
+KERN-ERKENNTNIS: LLM-Agenten haben kein Bauchgefühl|führen aus was logisch
+folgt|kein internes Zögern bei destruktiven Befehlen. Schutz NUR durch:
+1. Explizite Pflicht-Stopp-Liste (in CLAUDE_ZERBERUS.md)
+2. HitL-Gate vor jeder destruktiven Operation
+3. .bak-Pattern vor Überschreiben (P217 als Vorlage)
+4. Automatisches DB-Backup auf separatem Pfad

@@ -5,6 +5,44 @@
 - **NIEMALS den User fragen "wie möchtest du weitermachen"** wenn die Antwort aus HANDOVER+WORKFLOW ableitbar ist
 - **"Wie möchtest du weitermachen?" ist nur erlaubt wenn:** User-Entscheidung mit echtem Architektur-Risiko nötig ist (Scope-Sprengung, irreversible Änderung) ODER keine der vier Regeln oben greift
 
+## Destruktive Operationen — Pflicht-Stopp (ab sofort, alle Patches)
+
+HINTERGRUND: Zwei dokumentierte Vorfälle (DataTalks.Club März 2025, PocketOS Mai 2026)
+zeigen — Claude Code führt Befehle aus die logisch aus dem Kontext folgen, ohne
+Bauchgefühl. Kein Zögern, kein "bin ich sicher?". Das ist die Architektur.
+Schutz kommt nur durch explizite Regeln, nicht durch Vorsicht.
+
+PFLICHT-STOPP vor jeder dieser Operationen — auch im Marathon, auch wenn logisch:
+- Dateisystem: rm -rf|rmdir|del /s|shutil.rmtree|os.remove auf Datenbankdateien
+- SQLite/DB: DROP TABLE|DROP DATABASE|DELETE FROM ohne WHERE|TRUNCATE
+- FAISS: faiss.write_index (überschreibt)|Index-Reset ohne .bak-Sicherung
+- Docker: volume rm|container rm -v|docker system prune
+- Git: git push --force|git reset --hard (auf main)|branch -D
+- Allgemein: destroy|nuke|wipe|purge|overwrite in Skriptnamen oder Kommentaren
+
+STOPP bedeutet: Coda beschreibt WAS er tun will + WAS dabei verloren geht +
+fragt explizit: "Bestätigung?" — BEVOR der Befehl ausgeführt wird.
+Ausnahme: .bak-Dateien anlegen ist kein Stopp-Kandidat (sichert, löscht nicht).
+
+BACKUP-MUSTER (Pflicht bei Index/DB-Operationen):
+- Vor Überschreiben: <datei>.<grund>_<UTC-Timestamp>.bak anlegen (P217-Pattern)
+- Nie silent overwrite|immer Audit-Spur|.bak liegt neben Original
+
+SQLITE-BACKUP (Coda richtet einmalig ein, Patch nach Bedarf):
+- Ziel: bunker_memory.db + alle weiteren *.db täglich per Cronjob sichern
+- Zielpfad: separates Verzeichnis oder separate Partition (nicht selbes Volume)
+- Cronjob-Skript in scripts/backup_db.ps1 (Windows Task Scheduler)
+- Fehler im Backup → WARNING-Log, kein Server-Absturz
+
+FAISS-BAK-MUSTER (bereits in P217, hier als Standard festgeschrieben):
+- Vor jedem Index-Reset oder Dimension-Resync: <index>.dim_mismatch_<dim>_<UTC>.bak
+- Gilt auch für manuelle Reindex-Operationen (S-03, P213-pre-3)
+- .bak-Dateien werden NICHT versioniert (in .gitignore)
+
+LESSON (aus PocketOS/DataTalks-Vorfällen):
+Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
+→ Schutz = explizite Regeln + HitL-Gate + Backup, nicht Vorsicht
+
 ## Loki / Fenrir / Vidar — Pflicht-Lauf bei jedem UI-/Auth-/Pipeline-Patch (P215 — Prozess-Regel)
 - **Bei JEDEM Patch der UI, Auth, Chat-Pipeline, RAG, Guard, Huginn oder einen Endpoint anfasst** → Server starten via [`start_stable.bat`](start_stable.bat) und ALLE drei Playwright-Suiten gegen den Live-Server ausfuehren|Reihenfolge: 1) **Vidar** (Smoke, Go/No-Go ~60s) `pytest zerberus/tests/test_vidar.py -m e2e`, 2) **Loki** (E2E) `pytest zerberus/tests/test_loki.py zerberus/tests/test_loki_mega_patch.py -m e2e`, 3) **Fenrir** (Chaos) `pytest zerberus/tests/test_fenrir.py zerberus/tests/test_fenrir_mega_patch.py -m e2e`|Failures = Blocker — kein Push ohne gruene Suiten ODER dokumentierten Skip-Grund mit Ticket-/Schulden-Verweis
 - **`-m e2e` ist Pflicht** — pytest.ini deselektiert e2e/integration im Default-Run, ohne Marker laufen die Tests nicht (alle Vidar/Loki/Fenrir-Module tragen `pytestmark = pytest.mark.e2e`)
