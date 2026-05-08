@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-6 (2026-05-08) — Phase 5c Schritt 6: Reasoning-Block-Styling. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 ✅, UI-7 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-7 (2026-05-08) — Phase 5c Schritt 7: LLM-Icon-Anzeige. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 ✅, UI-8 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,51 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-7** — Phase 5c Schritt 7: LLM-Icon-Anzeige (2026-05-08)
+
+Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt jetzt ein kleines Icon (22 px Default, 24 px Touch, `border-radius: 6px`) links oben in der Bot-Bubble, links neben dem P-UI-2-Collapse-Toggle. Das Icon zeigt das tatsächlich verwendete Modell — primär als Provider-Logo via OpenRouter-CDN-URL (`https://openrouter.ai/images/icons/<provider>.svg`), bei fehlender oder fehlerhafter URL als Buchstaben-Badge mit deterministischer HSL-Background-Color aus dem Modell-Hash. Wenn der Intent-Router (UI-11 später) auf ein anderes Modell umschaltet, wechselt das Icon automatisch — "Show, don't tell": Modellwechsel sichtbar machen ohne Text/Toast. Disjunkter CSS-Namespace `.pui7-...` — keine Kollision mit P-UI-1..6 oder Bestands-Klassen.
+
+**Architektur: Frontend-only Provider-Slug-Extraktion + Image-mit-onerror-Fallback + localStorage-Cache + idempotenter Attach-Helper + Source-Audit-Tests.**
+
+- **CSS-Block** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `.pui7-llm-icon` (Container, `display: inline-flex` + `flex: none` damit das Icon im natürlichen Flow vor dem Collapse-Toggle sitzt — bricht keine bestehende P-UI-2-Mechanik), `.pui7-llm-icon-img` (`width/height: 100%; object-fit: contain`), `.pui7-llm-icon-badge` (Default `display: none`, im Fallback-Fall sichtbar). Fallback-Modifier `.pui7-llm-icon.pui7-icon-fallback`: kippt Image versteckt → Badge sichtbar (`display: inline-block`). Mobile-Media-Query `(hover: none) and (pointer: coarse)` setzt das Icon auf 24 px (besseres Touch-Target).
+- **JS-Konstanten** `PUI7_ICON_BASE = 'https://openrouter.ai/images/icons/'` + `PUI7_ICON_CACHE_KEY = 'pui7_icon_cache_v1'`.
+- **localStorage-Cache** `pui7_iconCache` wird beim Modul-Load aus `localStorage.getItem(PUI7_ICON_CACHE_KEY)` initialisiert; Helper `pui7_persistIconCache()` schreibt zurück. Cache-Werte: `'ok'` (Image hat geladen) oder `'fail'` (Image-Load fehlgeschlagen). Wenn URL vorab als `'fail'` gecacht ist, wird das Image-Element gar nicht erst erzeugt — spart Network-Retry bei jedem Render.
+- **JS-Helper `pui7_getProvider(modelId)`**: defensive für leeren/non-string-Input, splittet am ersten `/`, liefert Provider-Slug lowercase (z.B. `"deepseek/deepseek-chat-v3.5"` → `"deepseek"`).
+- **JS-Helper `pui7_iconUrlForProvider(provider)`**: filtert Provider-Slug per `replace(/[^a-z0-9_-]/g, '')` (Injection-Schutz), baut `PUI7_ICON_BASE + safe + '.svg'`. Leerer Slug → leere URL.
+- **JS-Helper `pui7_modelLabel(modelId)`**: liefert Buchstaben-Badge — Special-Cases `DS` (DeepSeek), `R1` (DeepSeek-R1), `Cl` (Claude/Anthropic), `GP` (OpenAI/GPT), `Ge` (Google/Gemini), `Ll` (Meta/Llama), `Mi` (Mistral), `Qw` (Qwen). Sonst erste 1-2 Buchstaben des Provider-Slugs (capitalized). Letzter Fallback `'?'`.
+- **JS-Helper `pui7_hashHue(s)`**: djb2-ähnlicher Bit-Shift-Hash modulo 360 — deterministische HSL-Hue für die Background-Color des Badges (gleicher Modell-Slug → gleiche Farbe, immer und überall).
+- **JS-Helper `pui7_buildLLMIcon(modelId)`**: erstellt `<span class="pui7-llm-icon" data-pui7-icon="1" data-pui7-model="<modelId>">` (Audit-Hooks für DevTools) mit HSL-Background-Color via `pui7_hashHue(modelId)` und `title="<modelId>"` (Hover-Tooltip). Innen: ein `<span class="pui7-llm-icon-badge">` mit dem Badge-Text via `textContent` (XSS-sicher), und — wenn URL vorhanden + nicht `'fail'`-gecached — ein `<img class="pui7-llm-icon-img" loading="lazy">` mit `addEventListener('error')` (setzt `pui7-icon-fallback` + cacht `'fail'` + persistiert) und `addEventListener('load')` (cacht `'ok'` + persistiert). Wenn keine URL oder `'fail'`-gecached, wird das Image gar nicht erzeugt und die Fallback-Klasse direkt gesetzt.
+- **JS-Helper `pui7_attachLLMIcon(wrapperEl, modelId)`**: idempotent — findet `.message.bot-message` im Wrapper, entfernt etwaige alte `.pui7-llm-icon`-Elemente, baut neues Icon via `pui7_buildLLMIcon`, fügt es per `insertBefore(icon, .bubble-collapse-toggle)` direkt vor dem Collapse-Toggle ein (Spec: "links oben, neben dem Collapse-Toggle"). Fallback wenn kein Toggle: `insertBefore(icon, msgDiv.firstChild)`.
+- **Caller-Hook** in der `/v1/chat/completions`-Antwort-Verarbeitung (sendMessage-Pfad): `const replyModel = data.model || data.allowed_model || null` extrahiert die Modell-ID aus dem OpenAI-kompatiblen Response (`data.model`) bzw. dem Hel-spezifischen Fallback (`data.allowed_model`). Wenn `replyModel` nicht-leer und `pui7_attachLLMIcon` definiert → `pui7_attachLLMIcon(botWrapper, replyModel)` fail-quiet (try/catch wie P192/P203d-3-Pattern).
+- **addMessage-Signatur unverändert** (`function addMessage(text, sender, tsOverride)`) — bewusste Architektur. Wenn ich die Signatur um einen 4. Param `modelId` erweitere, brechen die P-UI-6-Tests, die exakt auf diesen Header splitten (`src.split("function addMessage(text, sender, tsOverride)", 1)[1]`). Stattdessen: separater `pui7_attachLLMIcon`-Helper, der nach `addMessage(reply, 'bot')` aufgerufen wird. Das hat den Bonus, dass der Hook idempotent + nachrüstbar bleibt — UI-11 könnte später bei Reasoning-Switch das Icon einfach erneut attachen.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_7_llm_icon.py`](zerberus/tests/test_p_ui_7_llm_icon.py): fünf Klassen, 54 Tests. Slice-basiert, kein Browser/Playwright.
+
+**Was P-UI-7 bewusst NICHT macht:**
+
+- **OpenRouter-Modell-Liste laden (`/api/v1/models`-Endpoint).** Spec NALA_UI_REDESIGN_PROMPT.md Sektion 6 schlägt vor "beim Laden der Modell-Liste aus OpenRouter die Icon-URLs cachen". Aktuelle Implementation kennt keine Modell-Liste — sie baut die Provider-Logo-URL deterministisch aus dem Provider-Slug der Modell-ID. Das spart einen Request-Pfad und einen Cache-State, hat dafür aber den Nachteil dass nicht jedes OpenRouter-Modell eine `<provider>.svg`-Datei hat. Das `<img onerror>`-Fallback fängt das auf und cacht `'fail'`, sodass jedes nicht-verfügbare Provider-Logo nach einem einzigen Network-Roundtrip dauerhaft auf den Buchstaben-Badge fällt. Folge-Patch (UI-7-pre-2) kann optional die OpenRouter-Modell-Liste laden und Icon-URLs aus `architecture.icon` o.ä. extrahieren.
+- **Reload-Bubbles aus `loadMessages` mit Icon ausstatten.** Backend speichert das Modell pro Message nicht (`store_interaction()` in `legacy.py` legt nur Rolle + Content + Timestamp ab). Reload-Bot-Bubbles bekommen kein Icon — bewusst akzeptierte Inkonsistenz für ersten UI-7-Wurf. Folge-Patch (UI-7-pre-3 oder Backend-Patch in der Patch-11x-Serializer-Familie) würde das Modell pro Message persistieren und beim Reload wieder anhängen.
+- **Reasoning-Switch live triggern.** Das Icon wird bei jedem `/v1/chat/completions`-Response gesetzt; wenn der Intent-Router (UI-11) ein anderes Modell wählt als das Default-Modell, kommt das im `data.model`-Feld korrekt durch und das Icon spiegelt es automatisch. UI-7 macht **keine** Live-Animation des Icon-Wechsels (z.B. Cross-Fade) — der Wechsel ist instant beim nächsten Render-Tick.
+- **Hamburger ☰ → ✖-Animation bei offener Sidebar.** Bleibt auch in UI-7 ungebaut (Spec hat keine Aussage, Mini-Add für späteren Patch).
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+- **DESIGN.md-`[WERT]`-Befüllung in Sektion 9.** Tabelle 9 verwendet bereits konkrete Werte (Position, Quelle, Fallback, Größe 20-24 px, Verhalten bei Reasoning) — keine offenen Platzhalter. Nur Changelog-Zeile.
+
+**Lessons (3):**
+
+1. **`onerror`-Fallback + localStorage-Cache verwandelt unsichere CDN-Bilder in robuste UI-Komponenten.** OpenRouter-CDN liefert Provider-Logos unter `https://openrouter.ai/images/icons/<provider>.svg`, aber nicht für jedes Provider-Kürzel — manche Modelle haben keinen Eintrag, andere wechseln Pfad-Konventionen. Statt vor jedem Icon-Render eine HEAD-Request zu senden oder eine kuratierte Whitelist zu pflegen, vertraut die Implementation dem Browser: `<img>` versucht zu laden, bei Fehlschlag feuert `addEventListener('error')` und kippt auf den Buchstaben-Badge — plus localStorage-Cache merkt sich den Fehlschlag pro URL, sodass beim nächsten Render kein Network-Retry mehr läuft. Erfolgreiche Loads cachen `'ok'`. Generalisierbar: **bei externen Bild-Quellen mit unklarer Coverage ist ein Image-mit-onerror-Fallback + Persistenz-Cache der saubere Ersatz für eine zentrale Whitelist** — der Cache wächst organisch mit der tatsächlichen User-Nutzung, statt eine veraltende Liste zu pflegen.
+
+2. **Hierarchische Hooks ohne Signatur-Änderung halten Source-Audit-Tests stabil.** Die intuitivste Architektur für UI-7 wäre ein vierter Param `modelId` an `addMessage(text, sender, tsOverride, modelId)`. Aber die P-UI-6-Tests splitten exakt auf `function addMessage(text, sender, tsOverride)` — eine Signatur-Erweiterung würde 7 Tests in `test_p_ui_6_reasoning_block.py::TestAddMessageHook` brechen, die mit dem Slice arbeiten. Lösung: separater `pui7_attachLLMIcon`-Helper, der **nach** `addMessage(reply, 'bot')` aus dem Caller heraus gerufen wird. Vorteile: (1) addMessage-Signatur unverändert, (2) Hook idempotent (mehrfacher Aufruf ist no-op), (3) UI-11 kann später denselben Helper bei Reasoning-Switch einfach erneut rufen, ohne addMessage anzufassen. Generalisierbar: **wenn Tests an einer Funktions-Signatur splitten und ein neuer Patch zusätzliches Verhalten an dieselbe DOM-Stelle koppeln will, ist der Caller-Side-Hook (vom Aufrufer aus) sauberer als der Callee-Side-Hook (zusätzlicher Param) — die Signatur bleibt invariant, die Tests bleiben stabil.**
+
+3. **Inline-flex + `flex: none` löst das "Icon vor Inline-Element"-Problem ohne `position: absolute`.** P-UI-2 setzt `.bubble-collapse-toggle` als `display: inline-block; margin-right: 6px;` — das Element sitzt im natürlichen Flow als erstes Child von `msgDiv`. Für UI-7 wollte ich das Icon **vor** dem Toggle haben, ohne den Toggle anzufassen. Erste Idee: `position: absolute; top: 6px; left: 6px;` (Toggle wäre dann `left: 36px;`). Problem: zwei absolute Positionen wären gegenseitig blind und brechen sofort, wenn Padding/Spacing der Bubble sich ändert. Lösung: `display: inline-flex` + `flex: none` + `margin-right: 6px` macht das Icon zu einem **Inline-Container mit fester Größe**, der im natürlichen Flow vor dem Toggle landet — ohne absolute Positionierung, ohne Layout-Brüche. `flex: none` verhindert Schrumpfen bei beengten Bubbles. Generalisierbar: **wenn ein neues Inline-Element vor einem bestehenden Inline-Element platziert werden soll, ist `display: inline-flex` + `flex: none` der saubere Pfad — `position: absolute` ist Coupling-Falle und sollte nur für tatsächlich überlappende Layer (Tooltips, Popovers, Modal-Overlays) verwendet werden.**
+
+**Tests:** 54 neue in [`zerberus/tests/test_p_ui_7_llm_icon.py`](zerberus/tests/test_p_ui_7_llm_icon.py) — fünf Klassen: `TestSourceWiringCSS` (12), `TestSourceWiringJSHelpers` (20), `TestCallerHook` (5), `TestKollisionMitVorgaengernPatches` (13), `TestPUiSevenInlineMarker` (4). Alle 305 UI-relevanten Tests grün lokal (test_p_ui_7 54 + test_p_ui_6 48 + test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). test_p203d3 `TestJsSyntaxIntegrity` (node --check) grün — kein JS-Syntax-Fehler nach Edit. Pre-existing-Failures unverändert: 4 `test_nala_projects_tab::TestNalaProjectsEndpoint`-ERRORS (`config.yaml`-Drift im Worktree, Memory) + 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 seit P-UI-4). Nicht durch P-UI-7 verursacht.
+
+**Logging-Tag:** keiner — P-UI-7 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
 
@@ -52,7 +97,7 @@ Sechster Code-Patch der UI-Redesign-Phase. Wenn die LLM-Antwort einen `<think>..
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
 
@@ -93,7 +138,7 @@ Fünfter Code-Patch der UI-Redesign-Phase. Der `📁 Projekte`-Sidebar-Button (P
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
 
@@ -133,7 +178,7 @@ Vierter Code-Patch der UI-Redesign-Phase. Die Sidebar oeffnet sich nicht mehr al
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
 
@@ -166,41 +211,6 @@ Dritter Code-Patch der UI-Redesign-Phase. Das Eingabefeld unten (sticky-Bottom) 
 **Tests:** 26 neue in [`zerberus/tests/test_p_ui_3_textarea_collapse.py`](zerberus/tests/test_p_ui_3_textarea_collapse.py) — vier Klassen. Alle 121 Nala-relevanten Tests gruen lokal (test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). Volle Suite-Erwartung: **2784 passed lokal erwartet** (P-UI-2-Baseline 2758 + 26 P-UI-3-Tests). Worktree-Lauf zeigt pre-existing Backend-Failures (`test_projects_*` config.yaml-Drift, `test_test_profile_filter`, `test_patch185_runtime_info`, `test_rag_dual_switch`) unveraendert — bekannter Worktree-Setup-Drift, nicht durch P-UI-3 verursacht (Patch berührt nur Frontend).
 
 **Logging-Tag:** keiner — P-UI-3 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
-
----
-
-## Vorvorvorheriger Patch (Referenz)
-
-**P-UI-2** — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben (2026-05-07)
-
-Zweiter Code-Patch der UI-Redesign-Phase. User-Bubbles werden bei langem Text (>160 Zeichen oder >2 Zeilen) automatisch eingeklappt und zeigen die letzte Zeile als Preview — User weiß sofort wo er zuletzt war. LLM-Ausgaben sind Default aufgeklappt und haben einen Toggle-Button (▼/▶) links oben mit dem man die Antwort einklappen kann; eingeklappt erscheint die erste Zeile als Preview. Tap auf eine eingeklappte User-Bubble klappt sie auf. P124 (Long-Message-Collapse mit max-height + Gradient-Fade + „Mehr"-Button) bleibt orthogonal als zusätzlicher Schutz für sehr lange aufgeklappte LLM-Antworten >500 Zeichen.
-
-**Architektur: ein CSS-Block + JS-Helper + addMessage-Wrapper-Layer + Source-Audit-Tests.**
-
-- **CSS-Block `.collapsed-v2` / `.bubble-preview` / `.bubble-full` / `.bubble-collapse-toggle`** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py) direkt nach dem P124-Block. Mechanik: `.message.collapsed-v2 .bubble-full { display: none }` versteckt den Original-Content, `.message.collapsed-v2 .bubble-preview { display: block }` zeigt die einzeilige Preview (mit `text-overflow: ellipsis` Truncation). `.bubble-collapse-toggle` ist ein transparenter Inline-Button (Default 18px, Touch-Hitbox 32px via `@media (hover: none) and (pointer: coarse)`). Touch-Konsistenz mit `.expand-toggle` (P124) min-height 32px.
-- **JS-Helper** vor `addMessage` in derselben Datei: `pui2_shouldCollapse(text)` (Test gegen `PUI2_COLLAPSE_CHAR_THRESHOLD = 160` und `PUI2_COLLAPSE_LINE_THRESHOLD = 2`), `pui2_firstLine(text)` (alles vor erstem `\n`), `pui2_lastLine(text)` (alles nach letztem `\n` nach Trim trailing newlines). Konstanten als oberste-Ebene-`const`s — leicht zu tunen ohne Funktionssignaturen anzufassen.
-- **`addMessage`-Wrapper-Layer**: `msgDiv` bekommt jetzt zwei strukturelle Kinder — `<div class="bubble-full">` mit dem Original-Content (für Bot via `renderBotContent(fullDiv, text)` statt direkt `msgDiv`, für User via `fullDiv.textContent = text`) und `<span class="bubble-preview">` mit der jeweiligen Preview-Zeile. Bot-Bubble bekommt zusätzlich einen `<button class="bubble-collapse-toggle">` mit ▼/▶-Symbol und `_setCollapseSym()`-Helper. User-Bubble mit `pui2_shouldCollapse(text)` bekommt `.collapsed-v2` als Initialklasse plus einen Click-Listener im **capture phase** (`addEventListener('click', handler, true)`) — feuert vor P139 `attachActionToggle`, damit Tap auf eingeklappter Bubble erst aufklappt und nicht erst die Action-Toolbar zeigt. Whitelist `a, button, select, input, textarea` ausgenommen (gleich wie P139).
-- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_2_collapse.py`](zerberus/tests/test_p_ui_2_collapse.py): vier Klassen (20 Tests) — `TestSourceWiringCSS` (7) prüft `.bubble-preview` default `display: none` mit Ellipsis-Truncation, `.collapsed-v2` versteckt Full und zeigt Preview, `cursor: pointer` auf User-Collapsed-v2, Toggle-Button-Styling und Touch-Hitbox 32px. `TestSourceWiringJS` (7) prüft Thresholds-Konstanten, Helper-Funktionen, `bubble-full`/`bubble-preview`-Klassen-Setzung in addMessage, korrekte Preview-Auswahl (User → lastLine, Bot → firstLine), Bot-Toggle-Button mit ▼/▶, User-Auto-Collapse-Trigger, capture-phase-Listener (`, true);`-Suffix). `TestKollisionMitP124P139` (4) prüft dass P124 `.message.collapsed { max-height: 220px }` und `.expand-toggle` Block intakt bleiben, P139 `attachActionToggle(wrapper, msgDiv)` weiter aufgerufen wird, P-UI-1 `max-width: 100%` auf `.message` und `.msg-wrapper` erhalten ist. `TestPUiTwoInlineMarker` (2) zementiert `P-UI-2` und `P-UI-2 (Phase 5c, 2026-05-07)` als Inline-Tag im Source.
-- **Angepasster P139-Test** in [`test_nala_bubble_layout.py`](zerberus/tests/test_nala_bubble_layout.py): `TestActionButtons::test_attach_wird_in_addmessage_aufgerufen` — Slice-Limit von 5000 auf 8000 Zeichen erhöht, weil der P-UI-2-Wrapper-Code die addMessage-Funktion verlängert hat. Inline-Kommentar mit `P-UI-2`-Tag dokumentiert den Update-Pfad.
-
-**Was P-UI-2 bewusst NICHT macht:**
-
-- **P124 ersetzen.** Beide Mechanismen koexistieren orthogonal: P124 ist visuelle Höhenbegrenzung mit Gradient-Fade für sehr lange aufgeklappte LLM-Antworten, P-UI-2 ist strukturelles Collapse für UX-Übersicht. P124 trifft bei `text.length > 500` zusätzlich zu P-UI-2 zu — User kann beide unabhängig togglen.
-- **LLM-Auto-Collapse.** Default aufgeklappt wie laut Prompt. Falls User Auto-Collapse für LLM will, ist das ein Settings-Toggle für später (UI-9 Skalierung Settings-Bereich).
-- **Animation der Collapse/Expand-Transition.** Hartes `display: none` ↔ `display: block` ohne CSS-Transition. Animation wäre Feature-Add ohne klaren ROI für die Grundfunktion.
-- **Markdown-aware Preview.** `firstLine`/`lastLine` arbeiten auf rohem Text. Wenn die erste Zeile einer LLM-Antwort ein Code-Block-Fence ` ``` ` ist, wird das so angezeigt. Pragmatisch ok — Mockup-Aufgabe ist „erste Zeile als Orientierung", nicht „schöne erste Zeile".
-- **Bubble-Padding ändern** (gehört zu späteren Phasen-5c-Patches falls Mockup-Werte adoptiert werden).
-- **DESIGN.md-[WERT]-Befüllung.** Sektion 8 (Chat-Nachrichten — Collapse-System) hat keine offenen [WERT]-Platzhalter; alle Werte stehen explizit (z.B. „>2 Zeilen", „letzte Zeile", „erste Zeile"). Spacing/Z-Index/Shadow-Stufen-Befüllung bleibt späteren Patches überlassen, die diese Komponenten anfassen.
-
-**Lessons (3):**
-
-1. **Newline-Strings in NALA_HTML brauchen `\\n`, nicht `\n`.** `NALA_HTML` ist ein Python-Triple-String ohne `r`-Prefix — `\n` darin wird beim Modul-Load zu echtem Newline-Char interpretiert, was im resultierenden JS einen ungeschlossenen String-Literal-Syntaxfehler verursacht. `text.split('\\n')` schreiben (drei Zeichen Backslash-Backslash-n im Quellcode), damit nach Python-Decoding `text.split('\n')` (Backslash + n) im JS-Output landet. Source-Audit-Test `TestJsSyntaxIntegrity::test_alle_inline_scripts_parsen` (P203d3) fängt das via `node --check` — ohne den Test wäre der Bug erst beim ersten echten Browser-Load aufgefallen. Generalisierbar: jeder JS-Inline-Block in einem Python-`"""`-String muss `\n`/`\t`/`\r` als `\\n`/`\\t`/`\\r` schreiben.
-2. **Capture-phase-Listener priorisiert vor existierenden Bubble-Listeners.** Bei eingeklappter User-Bubble würde ein normaler `click`-Listener gleichzeitig mit P139 `attachActionToggle` feuern (beide auf `msgDiv`) — wenn die Reihenfolge nicht definiert ist, blendet die Action-Toolbar potentiell BEIDES ein, der User sieht erst die Toolbar UND klappt auf. Lösung: `addEventListener('click', handler, true)` (capture phase, dritter Parameter `true`). Capture läuft vor Bubble-phase, mein Listener entscheidet zuerst — wenn collapsed-v2 dann remove + `stopPropagation()`, sonst nichts tun und P139 in der Bubble-phase normal feuern lassen. Generalisierbar: bei Konflikt zwischen mehreren Listenern auf demselben Element ist capture phase + `stopPropagation` der saubere Weg, ohne den Bestands-Listener anzufassen.
-3. **Source-Audit-Test mit `.split("}")` frisst die schließende Klammer.** Mein erster Test-Versuch für die capture-phase-Heuristik nutzte `block.split("}")[0:6]` und `"".join(...)` um den User-Tap-Block zu isolieren — das schneidet jeden `}` weg, also wurde aus `}, true)` (Listener-Ende) ein `, true)` und der Test failte fälschlicherweise. Anti-Pattern: Source-Splitten nach Strukturzeichen die im Pattern selbst vorkommen. Pro-Pattern: erst nach einem eindeutigen Marker splitten (`sender === 'user' && pui2_shouldCollapse(text)`) und dann eine fixe Slice-Länge nehmen (`[:1500]`) — Slice frisst keine Zeichen, und 1500 Zeichen reichen locker für den Block.
-
-**Tests:** 20 neue in [`zerberus/tests/test_p_ui_2_collapse.py`](zerberus/tests/test_p_ui_2_collapse.py) (vier Klassen). 1 angepasster in [`test_nala_bubble_layout.py`](zerberus/tests/test_nala_bubble_layout.py) (Slice-Limit 5000 → 8000 wegen längerer addMessage). Alle 95 Nala-relevanten Tests grün lokal (test_p_ui_2_collapse + test_p_ui_1_layout + test_nala_bubble_layout + test_nala_adapter + test_p203d3_nala_code_render). Volle Suite-Erwartung: **2738 + 20 = 2758 passed lokal erwartet** (P-UI-1 brachte 16 auf 2722er-Baseline; P-UI-2 bringt 20 auf 2738).
-
-**Logging-Tag:** keiner — P-UI-2 ist reines Frontend-Collapse-System, kein neuer Server-Code-Pfad.
 
 ---
 
