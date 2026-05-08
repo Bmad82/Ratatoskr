@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-5 (2026-05-08) — Phase 5c Schritt 5: Projektseite als eigene View statt Settings-Tab. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 ✅, UI-6 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-6 (2026-05-08) — Phase 5c Schritt 6: Reasoning-Block-Styling. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 ✅, UI-7 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,46 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
+
+Sechster Code-Patch der UI-Redesign-Phase. Wenn die LLM-Antwort einen `<think>...</think>`-Block enthält (DeepSeek R1, generischer Pattern, OpenRouter-Reasoning-Modelle die das im content-string mitliefern), wird der Block jetzt separat oben in der Bot-Bubble gerendert — default eingeklappt (User sieht primär die Antwort), Toggle "Gedankengang" mit Dreieck-Icon klappt auf. Aufgeklappter Reasoning-Text ist nach rechts eingerückt mit halbtransparentem linken Strich, reduzierter Opacity (0.75) und reduzierter Saturation (`filter: saturate(0.7)`) — Spec DESIGN.md Sektion 8.3 "wirkt wie ein Gedanke, nicht ganz stofflich". Klarer visueller Bruch zur eigentlichen Antwort darunter (volle Opacity, normales Styling). KEINE Kollision mit der bestehenden P213-Reasoning-Stepper-Card (`.reasoning-card`/`.reasoning-step`/...) die die Pipeline-Phasen vor/während der Antwort zeigt — UI-6 zeigt den tatsächlichen Modell-Reasoning-Output, P213 zeigt Stepper-Phasen. Disjunkter CSS-Namespace `.pui6-...`.
+
+**Architektur: Frontend-only Extract-and-Render-Pipeline + Source-Audit-Tests.**
+
+- **CSS-Block** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `.pui6-reasoning-block` (Container, default `pui6-collapsed`-Klasse), `.pui6-reasoning-toggle` (Klick-Header mit `cursor: pointer`, `min-height: 28px`, `padding: 4px 8px`, Hover-Background `rgba(139,148,158,0.10)`), `.pui6-reasoning-arrow` (Dreieck mit `transition: transform 0.2s ease`), `.pui6-reasoning-label` ("Gedankengang"-Schrift), `.pui6-reasoning-content` (`margin-left: 16px` + `padding-left: 12px` + `border-left: 2px solid rgba(139,148,158,0.2)` + `opacity: 0.75` + `filter: saturate(0.7)` + `color: #9e9e9e` + `font-size: 0.92em` + `white-space: pre-wrap`). Default-Collapsed-Regel `.pui6-reasoning-block.pui6-collapsed .pui6-reasoning-content { display: none; }`. Aufgeklappt-Arrow-Rotation-Regel `.pui6-reasoning-block:not(.pui6-collapsed) .pui6-reasoning-arrow { transform: rotate(90deg); }`.
+- **JS-Konstante `PUI6_THINK_REGEX = /<think>([\\s\\S]*?)<\\/think>/i`** — non-greedy (matcht den ersten `<think>`-Block separat statt alles bis zum letzten `</think>` zu verschlucken), case-insensitive (`/i`-Flag), multiline (`[\s\S]` matcht auch Newlines).
+- **JS-Helper `pui6_extractReasoning(text)`**: defensive für leeren/non-string-Input, matcht den Regex, liefert `{ reasoning: <getrimmt>, content: <ohne-think-Block-getrimmt> }`. Wenn kein Match: `{ reasoning: '', content: text }`.
+- **JS-Helper `pui6_buildReasoningBlock(reasoningText)`**: erstellt `<div class="pui6-reasoning-block pui6-collapsed" data-pui6-reasoning="1">` mit `<button class="pui6-reasoning-toggle" data-pui6-toggle="1" aria-expanded="false">` (enthält `<span class="pui6-reasoning-arrow">▶</span>` + `<span class="pui6-reasoning-label">Gedankengang</span>`) + `<div class="pui6-reasoning-content">{reasoningText}</div>`. Click-Listener auf Toggle: `ev.stopPropagation()` (gegen P139-Action-Toolbar / P-UI-2-Bubble-Tap-Konflikt), `block.classList.toggle('pui6-collapsed')` und synct `aria-expanded`. Reasoning-Text via `textContent` gesetzt — XSS-sicher, kein `innerHTML`.
+- **`addMessage(text, sender, ...)`-Hook** für `sender === 'bot'`: extrahiert vor dem Render-Pfad `_pui6Reasoning` und `_pui6Content`. Ruft `renderBotContent(fullDiv, _pui6Content)` mit cleaned content (sonst landet der `<think>`-Block doppelt im DOM). Wenn `_pui6Reasoning` nicht-leer: `fullDiv.insertBefore(pui6_buildReasoningBlock(_pui6Reasoning), fullDiv.firstChild)` prepend-et den Block — Spec "Position: über der eigentlichen Antwort". `previewSpan.textContent` zeigt für Bot `pui2_firstLine(_pui6Content)` (sonst startet die Preview mit "<think>..."). User-Branch + `chatMessages.push(text)` unverändert — Reload behält den Original-Text mit `<think>`-Block, Reasoning wird beim Re-Render automatisch wieder extrahiert.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_6_reasoning_block.py`](zerberus/tests/test_p_ui_6_reasoning_block.py): fünf Klassen, 48 Tests. Slice-basiert, kein Browser/Playwright. Plus 1 P-UI-2-Test angepasst: `test_user_lastline_bot_firstline_preview` akzeptiert jetzt sowohl `pui2_firstLine(text)` als auch `pui2_firstLine(_pui6Content)` (User-Branch unverändert, Bot-Branch nutzt cleaned content).
+
+**Was P-UI-6 bewusst NICHT macht:**
+
+- **Backend-`thinking`-Parameter separat liefern.** Spec NALA_UI_REDESIGN_PROMPT.md Sektion 5 erlaubt sowohl `<think>`-Tags im Content als auch separaten `thinking`-Parameter. Aktuell kommt der LLM-Reasoning-Output (DeepSeek R1, OpenRouter-Reasoning-Modelle) im Content-String mit eingebetteten `<think>`-Tags. Hel-Adapter ist unverändert. Wenn das Backend künftig den Reasoning-Block separat liefert (z.B. als `data.reasoning_text`), wird das Frontend mit minimalem Patch erweitert (Helper-Funktion existiert, nur die Insertion-Source wechselt).
+- **Reasoning-Streaming.** Aktuell wird der Reasoning-Block einmalig nach Antwort-Vollständigkeit gerendert. Live-Streaming des Reasoning-Outputs (Token-für-Token-Update) wäre Folge-Patch — braucht Backend-Stream-Support für separaten Reasoning-Channel.
+- **Reasoning-Persistenz im Backend.** `chatMessages.push(text)` speichert weiter den Original-Text mit `<think>`-Tags. Beim Reload wird neu extrahiert. Backend-Serializer (Patch 11x-Familie) bleibt unangetastet.
+- **Sentiment-Ambient auf der Reasoning-Box.** Phase 5c Schritt 10 (UI-10) ist explizit für Sentiment-Ambient-Lighting — UI-6 fokussiert nur auf den Block-Style.
+- **Mobile-Tap-Visualfeedback (z.B. Haptic).** Toggle nutzt CSS-Hover/Active für visuelles Feedback. Haptic ist Browser-API-Topic für späteren Patch.
+- **`docs/DESIGN.md`-`[WERT]`-Befüllung in Sektion 8.3.** Tabelle 8.3 verwendet bereits konkrete Werte (`opacity: 0.7-0.8`, `filter: saturate(0.7)`, `--space-md`-Einrückung, `--border-color-light` für den Strich) — keine offenen Platzhalter zu füllen.
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+
+**Lessons (3):**
+
+1. **Disjunkter CSS-Klassen-Namespace verhindert Kollision mit ähnlich benannten Bestands-Klassen.** Die Phase-5a-Reasoning-Stepper-Card aus P213 nutzt `.reasoning-card`/`.reasoning-toggle`/`.reasoning-list`/`.reasoning-step` mit eigener Polling-Mechanik und eigenem CSS-Block. P-UI-6 baut etwas semantisch Ähnliches (Reasoning-Block mit Toggle), aber auf einer ANDEREN Datenebene (Modell-Reasoning-Output statt Pipeline-Schritt-Audit). Statt `.reasoning-block`/`.reasoning-toggle-2` etc. wurde der Namespace explizit `pui6-reasoning-...` gewählt — das macht das Source-Diff-Auditing trivial (alle UI-6-Selektoren haben das `pui6-`-Präfix), und Anti-Pattern-Tests stellen sicher, dass die alten P213-Klassen nicht versehentlich im neuen CSS-Block auftauchen. Generalisierbar: **bei thematisch verwandten Patches in gleicher Datei lieber Namespace-Präfix als Suffix-Variation** — `pui6-` zeigt sofort die Patch-Herkunft, `-2`/`-new` sind nichtssagend.
+
+2. **Frontend-Extraktion via Regex statt Backend-Erweiterung — wenn der Output schon im Content-String steht, muss man ihn nicht doppelt durch die Pipeline schicken.** DeepSeek R1 und OpenRouter-Reasoning-Modelle liefern den `<think>`-Block bereits als Teil des content-Strings. Eine Backend-Erweiterung (separates `reasoning_text`-Feld in der `/v1/chat/completions`-Response, Adapter-Anpassung in `nala_adapter.py`, Hel-Routing-Update) hätte 4–6 Files berührt für Information, die schon da war. Stattdessen: ein 4-Zeilen-Regex `/<think>([\s\S]*?)<\/think>/i` im Frontend, ein Helper, ein Hook in `addMessage` — Patch berührt nur `nala.py`. Generalisierbar: **prüfen ob die Information schon im Datenstrom mitkommt, bevor man Backend-Schemas erweitert.**
+
+3. **Defensive `stopPropagation` an Toggle-Buttons innerhalb klick-aktiver Wrapper ist Pflicht, nicht Cosmetic.** Das `pui6-reasoning-toggle`-Button sitzt innerhalb der `.bubble-full`/`.message`-Bubble, die ihrerseits diverse Click-Listener hat: P139-Action-Toolbar-Toggle (`attachActionToggle` macht 5 s-Sichtbarkeit auf Tap), P-UI-2-User-Bubble-Auto-Expand (capture-phase-Listener, der `collapsed-v2` toggelt). Ohne `ev.stopPropagation()` im Click-Listener des Reasoning-Toggles würde ein Klick auf "Gedankengang" GLEICHZEITIG die Action-Toolbar einblenden und (bei User-Bubbles) das Auto-Collapse togglen — visuell unschön und semantisch falsch (User wollte den Reasoning-Block aufklappen, nicht die ganze Bubble manipulieren). Generalisierbar: **jeder Klick-Listener auf einem Inner-Element innerhalb einer click-aktiven Bubble braucht `stopPropagation` — sonst kaskadiert der Click durch die ganze Listener-Kette.**
+
+**Tests:** 48 neue in [`zerberus/tests/test_p_ui_6_reasoning_block.py`](zerberus/tests/test_p_ui_6_reasoning_block.py) — fünf Klassen: `TestSourceWiringCSS` (13), `TestSourceWiringJSHelpers` (14), `TestAddMessageHook` (7), `TestKollisionMitVorgaengernPatches` (10), `TestPUiSixInlineMarker` (4). Plus 1 P-UI-2-Test angepasst (`test_user_lastline_bot_firstline_preview` akzeptiert jetzt sowohl `pui2_firstLine(text)` als auch `pui2_firstLine(_pui6Content)`). Alle 251 UI-relevanten Tests grün lokal (test_p_ui_6 48 + test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). Pre-existing-Failures unverändert: 4 `test_nala_projects_tab::TestNalaProjectsEndpoint`-ERRORS (`config.yaml` fehlt im Worktree, Memory) + 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 seit P-UI-4). Nicht durch P-UI-6 verursacht.
+
+**Logging-Tag:** keiner — P-UI-6 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
 
@@ -53,7 +93,7 @@ Fünfter Code-Patch der UI-Redesign-Phase. Der `📁 Projekte`-Sidebar-Button (P
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
 
@@ -93,7 +133,7 @@ Vierter Code-Patch der UI-Redesign-Phase. Die Sidebar oeffnet sich nicht mehr al
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
 
@@ -129,7 +169,7 @@ Dritter Code-Patch der UI-Redesign-Phase. Das Eingabefeld unten (sticky-Bottom) 
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-2** — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben (2026-05-07)
 
@@ -164,7 +204,7 @@ Zweiter Code-Patch der UI-Redesign-Phase. User-Bubbles werden bei langem Text (>
 
 ---
 
-## Vorvorvorheriger Patch (Referenz)
+## Vorheriger Patch
 
 **Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07, parallel zu P-UI-1)
 
