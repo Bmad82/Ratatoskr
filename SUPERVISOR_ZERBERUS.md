@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-4 (2026-05-07) — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay, neuer Aufbau (Suchfeld → Neuer Chat → Projekte → Historie → Footer). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 ✅, UI-5 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-5 (2026-05-08) — Phase 5c Schritt 5: Projektseite als eigene View statt Settings-Tab. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 ✅, UI-6 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,47 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
+
+Fünfter Code-Patch der UI-Redesign-Phase. Der `📁 Projekte`-Sidebar-Button (P-UI-4 als Übergangs-Click) routet jetzt auf eine eigene `#projects-screen`-View, die Geschwister von `#chat-screen` und `#login-screen` im `.app-container` ist und denselben Container-Shift bei offener Sidebar mitnutzt. Die View hat einen Header (Back-Button → `closeProjectsView()` + Titel "📁 Projekte"), eine Toolbar (Live-Suchfeld `#projects-search` mit Lupe-Placeholder + Sort-Toggle "Letzter Zugriff" / "Name" — Default `recent` per `updated_at` desc), und einen Scroll-Bereich (Pull-Zone für "Neues Projekt"-Hint, Aktiv-Display, Pinned-Sektion mit 📌-Heading und goldenem `border-left`, Reguläre Sektion). Settings-Tab "📁 Projekte" + Panel + alte Render-Funktionen sind komplett entfernt — Spec DESIGN.md Sektion 13: "Projekte raus aus Einstellungen". Active-Project-Chip im Header onclick → `openProjectsView()` (vorher `openSettingsModal(); switchSettingsTab('projects')`).
+
+**Architektur: neuer Screen-DIV im .app-container + Render-Pipeline mit Cache + Live-Search + Sort-Toggle + Pin-State (localStorage) + Pull-Gesture + Source-Audit-Tests.**
+
+- **CSS-Block `#projects-screen`** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): default `display: none; flex-direction: column; height: 100%;` plus knapp 200 Zeilen für Header/Toolbar/Search/Sort-Toggle/Pull-Zone/Project-Card/Pinned-Border/Empty-State. `.project-card.pinned` bekommt `border-left: 4px solid var(--color-gold)`. `.project-card.active` gold-Border + gold-Hintergrund. `.projects-pull-zone` default `max-height: 0` mit Transition; `.projects-pull-zone.revealed` expandiert auf 60px.
+- **HTML-Block `<div id="projects-screen">`** als Geschwister von `<div id="chat-screen">` im `.app-container`. Aufbau: Header (Back-Button `←` + Titel) → Toolbar (Search-Input + Sort-Buttons mit `data-sort="recent"` und `data-sort="name"`) → Scroll-Container (Pull-Zone mit "Neues Projekt"-Hint, Active-Display, Pinned-Sektion versteckt-bei-leer, Regular-Sektion).
+- **Settings-Tab-Button + Tab-Panel entfernt** — `data-tab="projects"`-Button und kompletter `#settings-tab-projects`-Panel-Block weg. `switchSettingsTab(tab)` hat keinen `if (tab === 'projects')`-Branch mehr.
+- **Active-Project-Chip onclick umgeleitet** auf `openProjectsView()`. Alte Patch-201-Routing (`openSettingsModal(); switchSettingsTab('projects')`) komplett raus.
+- **JS-Funktionen neu**: `openProjectsView()` (View einblenden, Sidebar schließen, `loadNalaProjects()` triggern), `closeProjectsView()` (zurück zum Chat), `renderProjectsView()` (Filter + Sort + Split pinned/regular, rendert in beide Sektionen), `pui5_buildProjectCardHtml(p, isPinned, isActive)` (Card-HTML mit Pin-Button), `pui5_formatProjectTimestamp(iso)` (de-Datum), `getPinnedProjectIds()/setPinnedProjectIds()/toggleProjectPin(id, ev)` (localStorage `nala_pinned_projects`), `setProjectsSortMode(mode)` ('recent' | 'name', toggelt Active-Klasse), `handleProjectTap(id)` (aktivieren + zurück zum Chat), `handleNewProjectHint()` (Anti-Clutter-Alert "Anlegen geht über Hel"), `pui5_revealPullZone()/pui5_attachPullGesture()` (touchstart/touchmove/wheel-Listener auf `#projects-scroll`, threshold 80 px für 5 s revealing), `pui5_attachProjectsSearch()` (input-Listener), `pui5_initProjectView()` (init-Hook, DOMContentLoaded oder sofort).
+- **`loadNalaProjects()` umgebaut**: rendert in die neue View statt in den alten Settings-Tab. Alte `renderNalaProjectsList(items)` und `renderNalaProjectsActive()` entfernt. Aktiv-Display-Logik in `renderProjectsView()` integriert. Zombie-ID-Schutz aus Patch 201 bleibt.
+- **`setActiveProject`/`clearActiveProject`** rufen jetzt `renderProjectsView()` defensive (typeof-Check) statt der alten zwei Render-Funktionen.
+- **`doLogout` und `handle401`** blenden `#projects-screen` defensive aus, sonst hängt sie nach Logout sichtbar über dem Login.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_5_project_view.py`](zerberus/tests/test_p_ui_5_project_view.py): fünf Klassen, 53 Tests. Slice-basiert, kein Browser/Playwright. [`test_nala_projects_tab.py`](zerberus/tests/test_nala_projects_tab.py) Patch-201-Tests an P-UI-5 angepasst — die alten Tab-Audit-Klassen prüfen jetzt die View-Mechanik; XSS-Test umgesattelt auf `pui5_buildProjectCardHtml` + Search-Query-Escape-Pflicht; `_disable_auto_template`-Fixture nicht mehr autouse, damit HTML-Audit-Tests ohne `config.yaml`-Setup laufen. Pre-existing P-UI-4-Failure `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Anchor durch overlay-Entfernung kaputt) bleibt offen — nicht durch P-UI-5 verursacht.
+
+**Was P-UI-5 bewusst NICHT macht:**
+
+- **Detail-View (Anweisungen + Ressourcen + Chat-Liste innerhalb des Projekts).** Spec 13.2 verlangt sie, aber Backend `/nala/projects` liefert nur `id/slug/name/description/updated_at` — keine Anweisungen, keine Ressourcen, keine Chat-Liste-Filterung. Folge-Patch (UI-5b oder eigener Backend-Patch) baut den Detail-Read-Pfad. `handleProjectTap(id)` aktiviert das Projekt und kehrt zur Chat-View zurück (Standard-Flow).
+- **`chat_count` pro Projekt anzeigen.** Spec 13.1 nennt "Name + Chat-Anzahl + letzter Zugriff" pro Eintrag. Aktuelle API liefert kein chat_count — wird stattdessen Slug + Datum angezeigt. Backend-Erweiterung wäre Folge-Patch.
+- **Pin-State im Backend persistieren.** Pin-Status liegt rein in `localStorage[nala_pinned_projects]` — überlebt Browser-Restart, aber nicht Geräte-Wechsel. Backend-Schema `pinned`-Feld auf Project-Tabelle wäre Folge-Patch.
+- **"Neues Projekt"-Anlegen direkt in Nala.** Spec 13.1: "versteckt hinter Pull-Gesture ganz oben". Pull-Gesture ist drin (touchmove > 80 px reveal die Zone), Klick zeigt einen Hint-Alert "Anlegen geht über Hel". Echtes Inline-Anlegen wäre Backend-Endpoint + Form — Folge-Patch.
+- **Hamburger ☰ → ✖-Animation bei offener Sidebar.** Bleibt auch in UI-5 ungebaut (gleiche Begründung wie P-UI-4: Spec hat keine Aussage, Mini-Add für späteren Patch).
+- **Hel-Splitscreen-Bug** (Schulden-Liste #9) — eigener Folge-Patch innerhalb der Phase 5c.
+
+**Lessons (3):**
+
+1. **Eine View als Geschwister im transformed Container shiftet automatisch mit — kein extra Setup.** Die `#projects-screen`-View nutzt denselben Container-Shift wie `#chat-screen` aus P-UI-4, weil sie Geschwister im `.app-container` ist und der Container-Transform sie als Layout-Child mitnimmt. Kein eigener Sidebar-Open-State-Listener nötig, kein doppelter Transform — die Geometrie kaskadiert. Generalisierbar: **Layout-Modi auf `.app-container`-Ebene gelten für alle Screen-DIVs darunter.** Wenn ein neuer Screen den selben Modi-Pool bekommen soll (Container-Shift, Read-Only-Mode-Ueberlay etc.), reicht es als `.app-container`-Geschwister.
+
+2. **Defensive `typeof === 'function'`-Checks an Cross-Module-Render-Calls vermeiden Init-Order-Probleme.** Die alten `renderNalaProjectsList`/`renderNalaProjectsActive`-Funktionen waren globale Aufrufe in `setActiveProject`/`clearActiveProject` ohne Defensive — wenn die Render-Targets nicht existieren (z.B. weil der User noch nicht zur View navigiert ist oder `handle401` mitten im Login feuert), warf der DOM-Zugriff. P-UI-5 ersetzt das durch `if (typeof renderProjectsView === 'function') { try { renderProjectsView(); } catch (_) {} }` — der Aufruf ist no-op-tolerant, der Cache wird trotzdem aktualisiert. Generalisierbar: **bei jedem Aufruf einer Render-Funktion aus einer Setter/Mutator-Funktion (statt aus einem Init-Hook) Defensive-Checks vorschalten** — das Setter-Pattern wird oft von verschiedenen Code-Pfaden gerufen, und die Render-Targets existieren nicht überall.
+
+3. **`autouse=True`-Fixtures koppeln Source-Audit-Tests an Backend-Setup.** `test_nala_projects_tab.py` hatte einen `_disable_auto_template`-Fixture mit `autouse=True`, der `cfg.get_settings()` ruft — und dabei `config.yaml` lädt, was im Worktree-Setup gitignored ist. Ergebnis: alle 18 reinen HTML/JS-Source-Audit-Tests fielen mit `FileNotFoundError`-ERROR aus, obwohl sie nur den NALA_HTML-String brauchen, nicht die Settings. Lösung: `autouse=True` raus, Fixture wird nur von den Endpoint-Tests explizit angefordert. Generalisierbar: **`autouse=True` nur für Fixtures verwenden, deren Setup garantiert auf jedem Test-Pfad funktioniert** (logging, monkeypatch von Standard-Modulen) — alles, was externe Files/Configs lädt, wird Pflicht-Fixture mit explizitem Param.
+
+**Tests:** 53 neue in [`zerberus/tests/test_p_ui_5_project_view.py`](zerberus/tests/test_p_ui_5_project_view.py) — fünf Klassen: `TestSourceWiringCSS` (7), `TestSourceWiringHTMLLayout` (12), `TestSourceWiringJS` (19), `TestKollisionMitVorgaengernPatches` (12), `TestPUiFiveInlineMarker` (3). Plus 18 angepasste Tests in `test_nala_projects_tab.py` (Tab-Asserts → View-Asserts, XSS-Test auf neuen Card-Renderer + Search-Escape umgesattelt, autouse-Fixture entkoppelt). Alle 240 UI-relevanten Tests grün lokal (test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30 + test_nala_projects_tab 18 HTML-Audits + test_settings_umbau 19 nicht-broken). Pre-existing-Failures: 6 `test_nala_projects_tab::TestNalaProjectsEndpoint`-ERRORS (`config.yaml` fehlt im Worktree, dokumentiert in Memory) + 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Anchor durch P-UI-4 overlay-Entfernung kaputt). Nicht durch P-UI-5 verursacht.
+
+**Logging-Tag:** keiner — P-UI-5 ist reines Frontend-CSS+HTML+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
 
@@ -52,7 +93,7 @@ Vierter Code-Patch der UI-Redesign-Phase. Die Sidebar oeffnet sich nicht mehr al
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
 
@@ -88,7 +129,7 @@ Dritter Code-Patch der UI-Redesign-Phase. Das Eingabefeld unten (sticky-Bottom) 
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-2** — Phase 5c Schritt 2: Collapse-System v2 für User-Bubbles und LLM-Ausgaben (2026-05-07)
 
@@ -123,7 +164,7 @@ Zweiter Code-Patch der UI-Redesign-Phase. User-Bubbles werden bei langem Text (>
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **Patch 213-pre-4** — FAISS-Reindex-Backup-Garbage-Collection als wöchentlicher Cron-Job (HANDOVER-Schulden-Liste #8 geschlossen) (2026-05-07, parallel zu P-UI-1)
 
