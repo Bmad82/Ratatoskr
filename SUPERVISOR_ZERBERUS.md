@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-7 (2026-05-08) — Phase 5c Schritt 7: LLM-Icon-Anzeige. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 ✅, UI-8 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-8 (2026-05-08) — Phase 5c Schritt 8: Scroll-Navigationsleiste mit Gabelungs-Design. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 ✅, UI-9 bis UI-11 pending).*
 
 ---
 
@@ -14,9 +14,53 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 
 ## Aktueller Patch
 
+**P-UI-8** — Phase 5c Schritt 8: Scroll-Navigationsleiste (Gabelungs-Design) (2026-05-08)
+
+Achter Code-Patch der UI-Redesign-Phase. Vertikaler Strich am linken Bildschirmrand (außerhalb der iOS-Swipe-Back-Zone), gabelt sich zu einem kleinen Oval pro LLM-Antwort und führt wieder zusammen — organisch, „wie Nervenbahnen". Default unsichtbar; erscheint nach 1 s aktivem Scrollen mit `opacity: 0 → 0.25` über `0.3s ease`, verschwindet nach 2.5 s Stillstand. Klick-Delay 300 ms (verhindert versehentliches Springen während des Scrollens). Eigenständig scrollbar bei mehr Anchors als ins Viewport passen. Klick auf einen Anchor: Smooth-Scroll zum entsprechenden Bot-Wrapper via `scrollIntoView({behavior: 'smooth', block: 'start'})`. Disjunkter CSS-Namespace `.pui8-...` — keine Kollision mit P-UI-1..7 oder Bestands-Klassen.
+
+**Architektur: Body-Child-Container + SVG-Bezier-Gabelung + Scroll-Detection mit drei Timern + idempotenter addMessage-internal-Hook + Source-Audit-Tests.**
+
+- **CSS-Variablen** im `:root`: `--z-scroll-nav: 1500` (erste `--z-*`-Variable im Bestand — über Content, unter Sidebar/Login bei z-index 2000 und unter Modal bei 3000) und `--pui8-anchor-spacing: 40px` (DESIGN.md 11.1 fester Punkt-Abstand befüllt).
+- **CSS-Block** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `.pui8-scroll-nav` (Container, `position: fixed; left: 6px; top: 50%; transform: translateY(-50%); z-index: var(--z-scroll-nav); opacity: 0; pointer-events: none; transition: opacity 0.3s ease; max-height: 80dvh; overflow-y: auto; overscroll-behavior: contain`), `.pui8-scroll-nav.pui8-visible` (`opacity: 0.25` — DESIGN.md 11.1 "75% transparent"), `.pui8-scroll-nav.pui8-clickable` (`pointer-events: auto` — wird erst nach 300 ms Stillstand gesetzt). Anchor-Struktur: `.pui8-scroll-nav-anchor` (flex column, cursor pointer), `.pui8-scroll-nav-line.pui8-line-top` (1.5 px breit, 16 px hoch — Strich vor dem ersten Oval), `.pui8-scroll-nav-line.pui8-line-between` (1.5 px breit, `var(--pui8-anchor-spacing)` hoch — Strich zwischen Ovals), `.pui8-scroll-nav-fork` (16x10 px SVG-Container), `.pui8-scroll-nav-oval` (10x14 px, `border-radius: 50%`, `border: 1.5px solid currentColor`, dunkler Background). `.pui8-scroll-nav-anchor.pui8-active .pui8-scroll-nav-oval` (gold-Highlight, `var(--color-gold)`-Background — vorbereitet für IntersectionObserver-Active-State, im ersten Wurf noch nicht verdrahtet). Strich + Stroke verwenden `currentColor` für Theme-Faehigkeit. Hide bei offener Sidebar: `body.pui4-sidebar-open .pui8-scroll-nav { display: none; }`.
+- **JS-Konstanten** `PUI8_FADE_IN_MS = 1000` (Spec "nach ~1 s aktivem Scrollen"), `PUI8_FADE_OUT_MS = 2500` (Spec "nach 2-3 s Scroll-Stillstand"), `PUI8_CLICK_DELAY_MS = 300` (Spec "verhindert versehentliches Springen"), `PUI8_SVG_NS = 'http://www.w3.org/2000/svg'`. State: `pui8_navEl` (Body-Child Container, lazy via `pui8_ensureNav`), `pui8_scrollContainer` (`#chatMessages`, lazy via `pui8_initScrollListener`), drei Timer-Refs (`pui8_fadeInTimer`/`pui8_fadeOutTimer`/`pui8_clickDelayTimer`), `pui8_anchorMap = new WeakMap()` (botWrapperEl → anchorEl, Idempotenz + automatische GC bei Wrapper-Removal).
+- **JS-Helper `pui8_ensureNav()`**: erstellt einen `<div class="pui8-scroll-nav" data-pui8-scroll-nav="1" aria-hidden="true">` als Body-Child. Idempotent via `pui8_navEl && pui8_navEl.isConnected`. Body-Child-Position ist Pflicht: bei `body.pui4-sidebar-open` formt der CSS-Transform auf `.app-container` einen neuen containing block für `position: fixed` Descendants — Body-Child bleibt davon unbetroffen (gleiches Pattern wie P-UI-4-Sidebar).
+- **JS-Helper `pui8_buildForkSvg(direction)`**: nutzt `createElementNS(PUI8_SVG_NS, 'svg')` — nicht `createElement('svg')`, weil das ein HTML-Element ohne SVG-Rendering produziert. `direction='out'` baut den oberen Fork (zwei Bezier-Kurven `M8 0 C8 4, 2 5, 2 5` und `M8 0 C8 4, 14 5, 14 5` — exakt aus dem Mockup), `direction='back'` den unteren (`M2 5 C2 5, 8 10, 8 10` und `M14 5 C14 5, 8 10, 8 10`). Stroke + Fill werden via CSS-Regel `.pui8-scroll-nav-fork path { stroke: currentColor; fill: none; stroke-width: 1.2; }` gesetzt — Theme-fähig.
+- **JS-Helper `pui8_buildAnchor(targetEl)`**: erstellt `<div class="pui8-scroll-nav-anchor" data-pui8-anchor="1">` mit Fork-Out + Oval + Fork-Back als Children (vertikales Layout via flex column). Click-Listener prüft erst ob `pui8_navEl` die Klasse `pui8-clickable` hat — verhindert Klicks während des 300-ms-Click-Delay-Fensters. Wenn ja: `targetEl.scrollIntoView({behavior: 'smooth', block: 'start'})` springt zum Bot-Wrapper.
+- **JS-Helper `pui8_addAnchor(botWrapperEl)`**: idempotent via WeakMap (`pui8_anchorMap.has(botWrapperEl)` → returnt vorhandenen Anchor). Ruft `pui8_initScrollListener()` lazy. Wenn der Nav-Container leer ist, fügt eine Top-Linie ein (`.pui8-line-top`, 16 px). Wenn das letzte Child ein Anchor ist (also schon mindestens einer existiert), fügt eine Between-Linie ein (`.pui8-line-between`, 40 px). Dann den neuen Anchor.
+- **JS-Helper `pui8_handleScroll()`**: drei Timer mit `clearTimeout` davor (verhindert Race Conditions bei rapidem Scrollen). Fade-In: wenn nicht visible, setze nach 1 s die `.pui8-visible`-Klasse. Click-Delay: nach 300 ms Stillstand setze `.pui8-clickable` (entferne sie sofort bei jedem Scroll-Event). Fade-Out: nach 2.5 s Stillstand entferne beide Klassen.
+- **JS-Helper `pui8_initScrollListener()`**: idempotent via `pui8_scrollContainer && pui8_scrollContainer.isConnected`. Holt `#chatMessages` und registriert `addEventListener('scroll', pui8_handleScroll, { passive: true })` — passive flag verhindert Scroll-Blocking.
+- **Hook in `addMessage`** am Ende vor `return wrapper;`: für `sender === 'bot'` mit `typeof pui8_addAnchor === 'function'`-Check und try/catch fail-quiet ruft `pui8_addAnchor(wrapper)`. **addMessage-internal-Hook (analog P-UI-2/6) statt Caller-Side-Hook (analog P-UI-7)** — keine externen Daten gebraucht, also reicht der eine Hook der alle 5 Aufrufstellen abdeckt: sendMessage (Live-Bot-Antwort), loadSession (Reload), late-replay-Bubble, STT-Fehler-Bubble, Greeting-Bubble. addMessage-Signatur **unverändert** (`function addMessage(text, sender, tsOverride)`) — bewusste Architektur damit P-UI-2/6/7-Source-Audit-Tests, die exakt auf diesen Header splitten, weiter grün bleiben.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_8_scroll_nav.py`](zerberus/tests/test_p_ui_8_scroll_nav.py): fünf Klassen, 83 Tests. Slice-basiert, kein Browser/Playwright.
+
+**Was P-UI-8 bewusst NICHT macht:**
+
+- **IntersectionObserver für Active-Highlight (`pui8-active`-Klasse).** CSS-Regel `.pui8-scroll-nav-anchor.pui8-active .pui8-scroll-nav-oval` ist vorbereitet (gold-Background-Color). Im ersten Wurf wird die Klasse aber noch nicht JS-seitig gesetzt — der User sieht alle Ovals gleich gefärbt. Folge-Patch (UI-8-pre-2): IntersectionObserver auf alle Bot-Wrapper, das Anchor-Element zum aktuell sichtbaren Wrapper bekommt `pui8-active`.
+- **Scrollbar-Sync mit Anchor-Position.** Wenn die Leiste eigenständig scrollbar wird (max-height 80dvh erreicht), gibt es keinen Sync zwischen Chat-Scroll-Position und Leist-Scroll-Position. Bei sehr langen Konversationen scrollt der User die Leiste manuell. Folge-Patch könnte die Leist-Scroll-Position automatisch zum aktiven Anchor zentrieren.
+- **Anchor-Rückbau bei Bot-Bubble-Removal.** Aktuell bleiben Anchors für gelöschte Bot-Bubbles im Container. Da Nala aber keine Bubble-Removal-Aktion hat (Chat ist append-only), ist das aktuell kein Problem. Bei Chat-Wechsel via `loadSession` wird der ganze Chat-Container neu gerendert — die alten Anchors bleiben aber im Body-Child. Folge-Patch könnte einen Cleanup beim Chat-Wechsel triggern (Empfehlung: in `loadSession`-Body `pui8_navEl?.replaceChildren()` einfügen — minimaler Patch).
+- **Hamburger ☰ → ✖-Animation bei offener Sidebar.** Bleibt auch in UI-8 ungebaut (Spec hat keine Aussage, Mini-Add für späteren Patch).
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+- **DESIGN.md-`[WERT]`-Befüllung in 3.4 für andere Z-Indizes** außer `--z-scroll-nav`. Die anderen Z-Index-Variablen (`--z-base`, `--z-sticky`, `--z-dropdown`, `--z-backdrop`, `--z-modal`, `--z-toast`, `--z-tooltip`) sind weiter `[WERT]` in DESIGN.md. Folge-Patch (UI-9 oder UI-Sammler) kann den vollständigen Stack einpflegen, sobald Bestand-Z-Indices auf Variablen migrieren.
+
+**Lessons (3):**
+
+1. **`addMessage`-internal-Hook vs. Caller-Side-Hook — wann welches Pattern.** P-UI-7-Lesson sagte: Caller-Side-Hook ist sauberer als Callee-Side-Hook (Param-Erweiterung), weil Source-Audit-Tests an der addMessage-Signatur splitten. P-UI-8 ergänzt: der Caller-Side-Hook ist nur dann der saubere Pfad, wenn der Caller einzigartige Daten hat (wie `modelId` bei P-UI-7) die addMessage nicht selbst kennt. Wenn der Hook **keine externen Daten** braucht (wie bei P-UI-2/6/8: nur den frisch erstellten Wrapper), ist der addMessage-internal-Hook am Ende der Funktion **kürzer und vollständiger** — er deckt alle Aufruf-Stellen automatisch ab (sendMessage, loadSession, STT-Fehler, late-replay, Greeting), ohne dass jeder Caller manuell den Hook duplizieren muss. Beide Patterns halten die Signatur invariant. **Faustregel:** Caller-Side wenn externe Daten → Callee-Internal sonst.
+
+2. **Body-Child-Position ist Pflicht für `position: fixed`-Layer auf transformed Containern.** P-UI-4-Lesson hatte das schon dokumentiert (Sidebar als Body-Child wegen `transform`-containing-block-Regel). P-UI-8 wendet das gleiche Pattern für die Scroll-Nav an — aber zusätzlich noch ein Layer: `body.pui4-sidebar-open .pui8-scroll-nav { display: none; }`. Begründung: selbst wenn die Scroll-Nav als Body-Child Viewport-fixed bleibt, würde sie bei offener Sidebar links neben den 280-px-shifted Content schwebend wirken — unschön. Beste Lösung ist die Leiste komplett auszublenden während der Sidebar — der User braucht die Sprung-Navigation eh nicht wenn er gerade die Sidebar bedient. **Faustregel:** Wenn ein Body-Child fixed-Layer mit einem anderen Body-Child fixed-Layer kollidieren könnte (Sidebar + Scroll-Nav), CSS-State-Mutex via `body.<state>` einbauen.
+
+3. **`createElementNS` ist Pflicht für SVG-Inline-DOM, nicht `createElement('svg')`.** Erste Idee für die Bezier-Gabelung war `document.createElement('svg')` + `setAttribute('width', '16')` etc. — Browser akzeptiert das, parst es aber als HTML-Element ohne SVG-Rendering. Pfade werden nicht gezeichnet, der Container bleibt leer. Korrekt: `document.createElementNS('http://www.w3.org/2000/svg', 'svg')` (und entsprechend für `path`-Children). Dasselbe gilt für jedes andere XML-Namespace-Element (MathML etc.). **Faustregel:** wenn ein Element zu einem anderen XML-Namespace gehört, IMMER `createElementNS` mit dem korrekten Namespace-URI verwenden — sonst gibt es kein Crash, nur stilles Nicht-Rendern. Backstop: `test_build_fork_createelementns` prüft den `createElementNS(PUI8_SVG_NS, ...)`-Aufruf im Source.
+
+**Tests:** 83 neue in [`zerberus/tests/test_p_ui_8_scroll_nav.py`](zerberus/tests/test_p_ui_8_scroll_nav.py) — fünf Klassen: `TestSourceWiringCSS` (29), `TestSourceWiringJSHelpers` (28), `TestAddMessageHook` (6), `TestKollisionMitVorgaengernPatches` (12), `TestPUiEightInlineMarker` (4). Alle 388 UI-relevanten Tests grün lokal (test_p_ui_8 83 + test_p_ui_7 54 + test_p_ui_6 48 + test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). test_p203d3 `TestJsSyntaxIntegrity` (node --check) grün — kein JS-Syntax-Fehler nach Edit (insbesondere keine `\u`-Escape-Trap, kein Backtick-Template-Literal-Konflikt). Pre-existing-Failures unverändert: 4 `test_nala_projects_tab::TestNalaProjectsEndpoint`-ERRORS (`config.yaml`-Drift im Worktree, Memory) + 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 seit P-UI-4). Nicht durch P-UI-8 verursacht.
+
+**Logging-Tag:** keiner — P-UI-8 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
+
 **P-UI-7** — Phase 5c Schritt 7: LLM-Icon-Anzeige (2026-05-08)
 
-Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt jetzt ein kleines Icon (22 px Default, 24 px Touch, `border-radius: 6px`) links oben in der Bot-Bubble, links neben dem P-UI-2-Collapse-Toggle. Das Icon zeigt das tatsächlich verwendete Modell — primär als Provider-Logo via OpenRouter-CDN-URL (`https://openrouter.ai/images/icons/<provider>.svg`), bei fehlender oder fehlerhafter URL als Buchstaben-Badge mit deterministischer HSL-Background-Color aus dem Modell-Hash. Wenn der Intent-Router (UI-11 später) auf ein anderes Modell umschaltet, wechselt das Icon automatisch — "Show, don't tell": Modellwechsel sichtbar machen ohne Text/Toast. Disjunkter CSS-Namespace `.pui7-...` — keine Kollision mit P-UI-1..6 oder Bestands-Klassen.
+Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt ein kleines Icon (22 px Default, 24 px Touch, `border-radius: 6px`) links oben in der Bot-Bubble, links neben dem P-UI-2-Collapse-Toggle. Das Icon zeigt das tatsächlich verwendete Modell — primär als Provider-Logo via OpenRouter-CDN-URL (`https://openrouter.ai/images/icons/<provider>.svg`), bei fehlender oder fehlerhafter URL als Buchstaben-Badge mit deterministischer HSL-Background-Color aus dem Modell-Hash. Wenn der Intent-Router (UI-11 später) auf ein anderes Modell umschaltet, wechselt das Icon automatisch — "Show, don't tell": Modellwechsel sichtbar machen ohne Text/Toast. Disjunkter CSS-Namespace `.pui7-...` — keine Kollision mit P-UI-1..6 oder Bestands-Klassen.
 
 **Architektur: Frontend-only Provider-Slug-Extraktion + Image-mit-onerror-Fallback + localStorage-Cache + idempotenter Attach-Helper + Source-Audit-Tests.**
 
@@ -57,7 +101,7 @@ Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt jetzt ein kle
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
 
@@ -97,7 +141,7 @@ Sechster Code-Patch der UI-Redesign-Phase. Wenn die LLM-Antwort einen `<think>..
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
 
@@ -138,7 +182,7 @@ Fünfter Code-Patch der UI-Redesign-Phase. Der `📁 Projekte`-Sidebar-Button (P
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
 
@@ -178,7 +222,7 @@ Vierter Code-Patch der UI-Redesign-Phase. Die Sidebar oeffnet sich nicht mehr al
 
 ---
 
-## Vorvorvorheriger Patch (Referenz)
+## Frueherer Patch (Referenz, ausserhalb Hot-Window)
 
 **P-UI-3** — Phase 5c Schritt 3: Eingabefeld Expand/Collapse-Verhalten (2026-05-07)
 
