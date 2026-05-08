@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-8 (2026-05-08) — Phase 5c Schritt 8: Scroll-Navigationsleiste mit Gabelungs-Design. Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 ✅, UI-9 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-9 (2026-05-08) — Phase 5c Schritt 9: 2-Achsen-Skalierung (UI-Scale + Schriftgröße als unabhängige Stepper). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 + UI-9 ✅, UI-10 bis UI-11 pending).*
 
 ---
 
@@ -13,6 +13,58 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-9** — Phase 5c Schritt 9: 2-Achsen-Skalierung (UI-Scale + Schriftgröße als Stepper) (2026-05-08)
+
+Neunter Code-Patch der UI-Redesign-Phase. Ersetzt den 1-Achsen-UI-Slider (Patch 142 / B-016) und die festen 4-Font-Presets (Patch 86) durch zwei UNABHAENGIGE Stepper-Achsen — `--ui-scale` (0.8..1.5, Schritt 0.05) für UI-Elemente (Buttons, Sidebar, Settings, Login, Labels) und `--font-size-base` (11..24px, Schritt 1px) für Bubble-Text und Eingabefeld. Der entscheidende Architektur-Move: ein Body-Anker `body { font-size: calc(15px * var(--ui-scale)); }` macht --ui-scale ueber em-Kette wirksam, waehrend Bubbles und `#text-input` explizit `font-size: var(--font-size-base)` setzen und damit unabhaengig bleiben — Spec DESIGN.md Sektion 2.5 "UI-Skalierung beeinflusst NICHT den Chat-Content" exakt erfuellt. Die alte Patch-142-Implementation hat beide Variablen gekoppelt (`--font-size-base = 16 * f + 'px'`) — das war ein latentes ANTI-Pattern, das der User nicht spueren konnte, weil die feste Slider-Range (1.4 statt 1.5) und das fehlende calc() im CSS die Wirkung gedaempft haben. P-UI-9 entkoppelt die Achsen sauber.
+
+**Architektur: zwei pui9-Stepper-Bloecke + Body-Anker + entkoppelte Setter + Backwards-Compat-Shims + Source-Audit-Tests.**
+
+- **CSS-Variablen** im `:root`: `--font-size-base: 15px` (Patch 86) und `--ui-scale: 1` (Patch 142) bleiben bestehen — werden nur neu verkabelt. Body-Edit: `body { font-size: calc(15px * var(--ui-scale)); }` ist der UI-Scale-Anker. Bubbles (`.message`) und Eingabefeld (`#text-input`) setzen weiterhin `font-size: var(--font-size-base)` — UNABHAENGIG vom body-font-size.
+- **CSS-Block** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `.pui9-stepper-row` (`display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0`), `.pui9-stepper-label` (`flex: 1 1 auto; font-size: 0.88em; color: var(--color-text-light)`), `.pui9-stepper-control` (`display: inline-flex; gap: 8px`), `.pui9-stepper-btn` (`min-width: 44px; min-height: 44px; padding: 0; border: 1px solid #2a4068; border-radius: 8px; font-size: 1.1em; font-weight: 700`), Hover/Active gold-Highlight, Disabled-Modifier `.pui9-disabled` (Opacity 0.4) fuer Cap-Visualisierung an Achsenenden. `.pui9-stepper-value` (`min-width: 64px; text-align: center; font-family: monospace`). Touch-Target durchgaengig 44 px. Toter `.font-preset-row`/`.font-preset-btn`-Block ENTFERNT.
+- **HTML in Settings-Tab "Look"** (`<div class="settings-section" data-pui9-scaling="1">`): zwei `pui9-stepper-row` mit `data-pui9-axis="ui-scale"` und `data-pui9-axis="font-size-base"` als Audit-Hooks. Pro Row: `pui9-stepper-label`-Text, `pui9-stepper-control` mit `<button>−`, `<span>` (Wert-Anzeige), `<button>+`. Buttons haben `aria-label`-Attribute (Accessibility), `id="pui9-{ui-scale,font-size}-{minus,plus,value}"` als JS-Hooks, und `onclick="pui9_step{UiScale,FontSize}(±1)"`.
+- **JS-Konstanten** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `PUI9_UI_SCALE_MIN = 0.8`, `PUI9_UI_SCALE_MAX = 1.5`, `PUI9_UI_SCALE_STEP = 0.05`, `PUI9_UI_SCALE_DEFAULT = 1.0`, `PUI9_FONT_SIZE_MIN = 11`, `PUI9_FONT_SIZE_MAX = 24`, `PUI9_FONT_SIZE_STEP = 1`, `PUI9_FONT_SIZE_DEFAULT = 15` als single source of truth fuer beide Achsen.
+- **JS-Helper `pui9_clamp(val, min, max)`**: Standard-Clamp ohne Math.min/max-Tricks (defensiv lesbar).
+- **JS-Helper `pui9_roundUiScale(f)`**: Float-Snap auf Vielfache der Schrittweite. Formel: `Math.round((f - MIN) / STEP) * STEP + MIN`, dann auf 2 Stellen gerundet. Vermeidet Float-Drift wie 1.05000000000001 nach mehrfachem Stepping.
+- **JS-Helper `pui9_setUiScale(val)`**: parsed val, snapt + clampt, setzt NUR `--ui-scale`, persistiert `nala_ui_scale`, ruft `pui9_renderUiScaleStepper(f)` fuer UI-Sync. **Beruehrt --font-size-base NICHT** — entkoppelt die Achse.
+- **JS-Helper `pui9_setFontSize(val)`**: akzeptiert Zahl (`15`) oder String (`"15px"`), parsed beide, clampt, setzt NUR `--font-size-base`, persistiert `nala_font_size`. Beruehrt `--ui-scale` NICHT.
+- **JS-Helper `pui9_stepUiScale(direction)` / `pui9_stepFontSize(direction)`**: greift den aktuellen computed value via `getComputedStyle`, addiert `direction * STEP`, delegiert auf den jeweiligen Setter. Wenn die Cap-Grenze erreicht ist, kein No-Op-Setter-Aufruf — nur Stepper-Render fuer Disabled-State.
+- **JS-Helper `pui9_resetUiScale()` / `pui9_resetFontSize()`**: entfernt CSS-Property + localStorage-Key + setzt Default-Anzeige im Stepper. Spec-Erfuellung: `resetTheme()` ruft beide.
+- **JS-Helper `pui9_renderUiScaleStepper(f)` / `pui9_renderFontSizeStepper(px)`**: setzt die Wert-Anzeige (z.B. "1.05×" / "16px") und togglet die `.pui9-disabled`-Klasse an den Buttons je nach Cap-Position.
+- **JS-Helper `pui9_renderSteppers()`**: Bootstrap-Sync — liest die computed values und ruft beide Render-Helper. Wird beim Modul-Load (DOMContentLoaded oder direkt) gerufen.
+- **Backwards-Compat-Shims** `applyUiScale(val)` und `resetUiScale()`: bleiben als duenne One-Liner, die auf `pui9_setUiScale`/`pui9_resetUiScale` delegieren. Bestands-Tests in `test_settings_umbau::TestUiSkalierung` und `test_loki_mega_patch` referenzieren diese Namen weiter — die delegieren jetzt sauber. Die alte Achsen-Kopplung ist KEIN Bestandteil mehr.
+- **Komplett ENTFERNT**: `setFontSize`/`resetFontSize`/`markActiveFontPreset` (Patch 86) — alle Aufrufer (`resetTheme`, `loadFav`) sind auf `pui9_setFontSize`/`pui9_resetFontSize` migriert.
+- **resetTheme()-Update**: ruft jetzt `pui9_resetFontSize()` UND `pui9_resetUiScale()` (Spec: "resetTheme muss auch resetUiScale aufrufen"). Vorher wurde nur die Schriftgroesse zurueckgesetzt.
+- **Favoriten v2-Schema erweitert**: `saveFav` schreibt zusaetzlich `uiScale: localStorage.getItem('nala_ui_scale')`. `loadFav` liest `raw.uiScale` und ruft `pui9_setUiScale(raw.uiScale)` — tolerant: ohne Slot bleibt die Achse unangetastet (kein implizites Reset, damit pre-P-UI-9-Favoriten nicht den User-Setting-Drift verursachen).
+- **Pre-Render-IIFE im `<head>`** erweitert: liest sowohl `fav.uiScale` (im aktiven-Favoriten-Pfad) als auch `nala_ui_scale` (im Plain-Pfad) und setzt `--ui-scale` schon vor dem ersten Paint. Vermeidet sichtbares Stepper-Snapping nach DOMContentLoaded, falls ein User mit skalierter UI ohne aktiven Favoriten reloadet.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_9_two_axis_scaling.py`](zerberus/tests/test_p_ui_9_two_axis_scaling.py): fuenf Klassen, 59 Tests. `TestSourceWiringCSS` (13) prueft Body-Anker, alle pui9-Klassen, 44-px-Touch-Target, Disabled-State, ENTFERNTE font-preset-Klassen. `TestSourceWiringJSHelpers` (18) prueft alle Konstanten + Helper + Backwards-Compat-Shims + Anti-Pattern-Sicherung (`pui9_setUiScale` beruehrt --font-size-base NICHT, `pui9_setFontSize` beruehrt --ui-scale NICHT). `TestSettingsUiWiring` (12) prueft die HTML-Stepper-Struktur in der Settings-Section + aria-Labels + Achsen-Datenattribute. `TestKollisionMitVorgaengernPatches` (12) prueft resetTheme-Migration, saveFav/loadFav-uiScale-Slot, Pre-Render-IIFE-uiScale-Read, ENTFERNTE alte Helper, addMessage-Signatur invariant. `TestPUiNineInlineMarker` (4) verlangt `P-UI-9 (Phase 5c, 2026-05-08)` mehrfach im Source. Slice-basiert, kein Browser/Playwright. Bestehende `TestUiSkalierung` in [`test_settings_umbau.py`](zerberus/tests/test_settings_umbau.py) komplett umgeschrieben (Slider→Stepper, von 5 Tests auf 11). Loki-Selektor in [`test_loki_mega_patch.py`](zerberus/tests/test_loki_mega_patch.py) Z. 681 um pui9-Stepper-IDs erweitert (alte slider-IDs als Fallback fuer pre-P-UI-9-Builds).
+
+**Was P-UI-9 bewusst NICHT macht:**
+
+- **Live-Cap-Detection durch Layout-Probe.** DESIGN.md 2.5 sagt: "Bei jedem Skalierungsschritt prüfen: überlappen UI-Elemente? Falls ja → Schritt wird nicht ausgeführt, visuelles Feedback." Aktuelle Implementation ist eine reine Wert-Cap (0.8/1.5 bzw. 11/24px) — sie probt nicht, ob die UI bei einem Schritt tatsaechlich noch lesbar/bedienbar ist. Folge-Patch (UI-9-pre-2) koennte einen `getBoundingClientRect`-Check auf kritische Elemente (Sidebar-Footer-Buttons, Settings-Tab-Header) einfuegen und den Schritt zurueckrollen, wenn Overflow entstanden ist. Aktueller Wert-Cap deckt 95 % der Faelle ab.
+- **Slider-Toggle als alternative Eingabe.** Spec sagt "Stepper, KEIN Slider" — Implementation hat den Slider komplett rausgeworfen. Falls Chris/Jojo später den Wunsch haben "ich hab grobmotorisch und brauche groessere Schritte", waere ein Long-Press-Auto-Repeat auf den Stepper-Buttons der saubere Pfad — kein Slider. Nicht implementiert.
+- **Reset-Button pro Achse.** Aktuelle Implementation hat KEINEN expliziten "↺ Zuruecksetzen"-Button pro Stepper — der `Theme-Reset`-Button am unteren Rand des Settings-Modals ruft `resetTheme()` auf, das jetzt beide Achsen mitresetet. Wenn Chris einen feineren Reset will, ist das ein 5-Zeilen-Folge-Patch.
+- **Skalierungs-Telemetrie.** Welcher User welche Werte gewaehlt hat, wird nicht logged — bleibt rein client-side in localStorage. Bewusste Privacy-Entscheidung, kein TODO.
+- **Migration alter `nala_font_size`-Werte.** Pre-P-UI-9 schrieb der alte Patch-86-Helper Werte wie `'13px'`/`'15px'`/`'17px'`/`'19px'` (4-Preset-Werte) bzw. der alte Patch-142-Helper schrieb `(16 * f) + 'px'`-Werte (z.B. `'18.4px'` fuer ui-scale=1.15). Beide Wertformate sind im neuen `pui9_setFontSize` parsbar (Regex `^(\d+(?:\.\d+)?)`) — die werden beim ersten Stepper-Klick auf den naechsten Schritt-Wert (Integer) gesnappt. Kein expliziter Migrations-Pass noetig. Pre-P-UI-9-Favoriten ohne `uiScale`-Slot lassen die Achse unangetastet — der User behaelt seinen aktuellen UI-Scale-Wert.
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+- **README.md / huginn_kennt_zerberus.md / PROJEKTDOKUMENTATION.md / DESIGN.md** — alle vier upgedatet (Doku-Pflicht laut WORKFLOW.md). Spiegel-Kopie `docs/RAG Testdokumente/huginn_kennt_zerberus.md` ebenfalls upgedatet.
+
+**Lessons (3):**
+
+1. **Body-Anker ueber `calc(<base> * var(--scale))` ist der saubere Pfad fuer "skaliere die UI, nicht den Content".** Der Patch-142-Versuch — beide Variablen gleichzeitig zu setzen (`--ui-scale` + `--font-size-base` an dieselbe Zahl koppeln) — ist die Anti-Implementation: der User kann die Bubbles nicht mehr unabhaengig skalieren, und das `calc()`-Versprechen aus dem Patch-142-Kommentar ("Dank calc() in der CSS skalieren alle Texte/Buttons/Paddings anteilig") wird im Code nirgends eingeloest. P-UI-9-Faustregel: wenn ein Skalierungssystem zwei Klassen von Elementen unterscheiden soll (UI vs. Content), gehoeren BEIDE Klassen an explizite, getrennte CSS-Variablen, und der Body bekommt einen `calc()`-Anker auf eine davon (die "Default-Klasse" — hier UI). Der Content nutzt seine eigene Variable als `font-size: var(--font-size-base)` und ist damit unabhaengig vom body. **Backstop:** `test_zwei_achsen_unabhaengig` prueft den Anti-Pattern-Fall (`pui9_setUiScale` darf `--font-size-base` NICHT mehr setzen).
+
+2. **Backwards-Compat-Shims sind billig genug, dass sie sich gegen "Bestands-Tests anpassen"-Risiko lohnen.** P-UI-9 koennte `applyUiScale`/`resetUiScale` komplett entfernen und alle bestehenden Tests aktualisieren. Aber: zwei drei-Zeilen-Shims kosten nichts, halten das Bestands-Test-Set (`test_settings_umbau::TestUiSkalierung`) lauffaehig, und reduzieren die Diff-Groesse fuer Reviewer. Setzt die Anti-Pattern-Kopplung (`16 * f`) im Process auf Null. **Faustregel:** wenn ein Patch ein Bestands-API umbaut (gleicher Name, anderes Verhalten), behalte den Namen als Shim — nur wenn das Shim selbst irrefuehrend wuerde (z.B. Side-Effects, die der Caller noch erwartet), entferne ihn ganz. Vorgaenger-Pattern: P-UI-3 hat `Math.min(scrollHeight, 140)` und alle Inline-`style.height`-Setter ohne Shim entfernt — weil dort der Sinn umgekehrt war (CSS-only statt JS-driven), nicht ein neues Verhalten unter altem Namen.
+
+3. **Pre-Render-IIFE-Doppelschreibung beim Skalierungs-Boot vermeidet sichtbares Snapping.** P-UI-9 hat zwei IIFE-Bloecke fuer Boot-Restore: die Pre-Render-IIFE im `<head>` (laeuft VOR dem ersten Paint) und die `restoreUiScale`-IIFE am JS-Block-Ende (laeuft nach dem ersten Paint, sobald das DOM verfuegbar ist). Erstere setzt `--ui-scale` direkt aus localStorage, sodass der erste Paint schon korrekt skaliert ist. Letztere ruft `pui9_renderSteppers()` fuer die Stepper-UI-Sync. Wenn ich nur die spaete IIFE haette: der Body wuerde mit `var(--ui-scale)`=1 rendern, dann nach DOMContentLoaded auf 1.15 (oder was) snappen — sichtbar. **Faustregel:** wenn ein State-Restore von einer CSS-Variable abhaengt, die `body { font-size: calc(...) }` mitkocht, IMMER zwei Restore-Punkte: einen pre-render fuer die CSS-Wirkung, einen post-render fuer alle abhaengigen UI-Elemente (Slider/Stepper/Indikatoren).
+
+**Tests:** 59 neue in [`zerberus/tests/test_p_ui_9_two_axis_scaling.py`](zerberus/tests/test_p_ui_9_two_axis_scaling.py) — fuenf Klassen: `TestSourceWiringCSS` (13), `TestSourceWiringJSHelpers` (18), `TestSettingsUiWiring` (12), `TestKollisionMitVorgaengernPatches` (12), `TestPUiNineInlineMarker` (4). Alle 471 UI-relevanten Tests gruen lokal (test_p_ui_9 59 + test_p_ui_8 83 + test_p_ui_7 54 + test_p_ui_6 48 + test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_settings_umbau 24 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). test_p203d3 `TestJsSyntaxIntegrity` (node --check) gruen — kein JS-Syntax-Fehler nach Edit. Pre-existing-Failures unveraendert: 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 seit P-UI-4). Nicht durch P-UI-9 verursacht.
+
+**Logging-Tag:** keiner — P-UI-9 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-8** — Phase 5c Schritt 8: Scroll-Navigationsleiste (Gabelungs-Design) (2026-05-08)
 
@@ -56,7 +108,7 @@ Achter Code-Patch der UI-Redesign-Phase. Vertikaler Strich am linken Bildschirmr
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-7** — Phase 5c Schritt 7: LLM-Icon-Anzeige (2026-05-08)
 
@@ -101,7 +153,7 @@ Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt ein kleines I
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
 
@@ -141,7 +193,7 @@ Sechster Code-Patch der UI-Redesign-Phase. Wenn die LLM-Antwort einen `<think>..
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
 
@@ -182,7 +234,7 @@ Fünfter Code-Patch der UI-Redesign-Phase. Der `📁 Projekte`-Sidebar-Button (P
 
 ---
 
-## Vorvorvorheriger Patch (Referenz)
+## Frueherer Patch (Referenz, ausserhalb Hot-Window)
 
 **P-UI-4** — Phase 5c Schritt 4: Sidebar Content-Shift statt Overlay (2026-05-07)
 
