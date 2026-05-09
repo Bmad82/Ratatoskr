@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-9 (2026-05-08) — Phase 5c Schritt 9: 2-Achsen-Skalierung (UI-Scale + Schriftgröße als unabhängige Stepper). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 + UI-9 ✅, UI-10 bis UI-11 pending).*
+*Letzte Aktualisierung: P-UI-10 (2026-05-09) — Phase 5c Schritt 10: Sentiment-Ambient-Lighting (sanfter Farbschimmer aus BERT+Prosodie-Konsens, Stufen 0–5 mit 15 % Opacity-Cap, 12 s Fade, abschaltbar). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 + UI-9 + UI-10 ✅, UI-11 pending).*
 
 ---
 
@@ -13,6 +13,59 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-10** — Phase 5c Schritt 10: Sentiment-Ambient-Lighting (2026-05-09)
+
+Zehnter Code-Patch der UI-Redesign-Phase. Sanfter Farbschimmer der gesamten Chat-Oberflaeche basierend auf User-Stimmung — vier Sentiment-Kategorien (Wut → Rot, Freude → Gold, Nachdenklich → Violett, Sachlich → Blau), Stufen 0–5 mit Opacity-Cap 15 % (DESIGN.md 10.3), Fade ueber 12 s (`--transition-ambient: 12s ease-in-out`), abschaltbar in Settings (Default ON). Datenquelle: `data.sentiment.user.{bert, prosody, consensus}` aus dem Triptychon-System (Patch 192/193); Frontend klassifiziert nur den User-Block in eine von vier Kategorien (oder neutral), schiebt die Klassifikation in eine 3-er History-State-Machine, prueft Konsens (Mehrheit ≥ 2), erhoeht die Stufe bei konsistenter Stimmung oder kippt auf Stufe 1 bei Wechsel. Frontend-only — kein Backend-Schema-Change. Disjunkter CSS-Namespace `.pui10-...` — keine Kollision mit P-UI-1..9 oder Bestands-Klassen.
+
+**Architektur: CSS-Variablen + Ambient-Layer als Container-Child + isolation-Stacking-Context-Trick + Klassifikator + State-Machine + Settings-Toggle + Source-Audit-Tests.**
+
+- **CSS-Variablen** im `:root`: vier Farben `--sentiment-anger: rgba(220,50,50,1)` (Wut Rot, gesaettigt), `--sentiment-joy: rgba(255,200,60,1)` (Freude warmes Gold), `--sentiment-contemplative: rgba(120,80,200,1)` (Nachdenklich Violett), `--sentiment-technical: rgba(60,130,220,1)` (Sachlich kuehles Blau). Plus Steuer-Variablen `--sentiment-current` (Default `transparent`), `--sentiment-opacity` (Default 0), `--transition-ambient: 12s ease-in-out` (Mitte des 10–15 s-Fensters laut Spec).
+- **`.app-container`-Edit**: nur eine neue Property `isolation: isolate` — erzwingt einen eigenen stacking context, damit der negative z-index des Ambient-Layer-Childs gefangen bleibt (nicht body-Hintergrund freigibt). Bestehende Properties (max-width 500px, position relative, transform-Transition) bleiben unangetastet. Erklaerender Kommentar VOR dem Block (nicht innerhalb), damit Test-Slices `_app_container_block` mit `after[:600]` weiter alle Properties einschliessen.
+- **CSS-Layer `.pui10-ambient-layer`** in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py): `position: absolute; inset: 0; pointer-events: none; z-index: -1; background-color: var(--sentiment-current); opacity: var(--sentiment-opacity); transition: opacity var(--transition-ambient), background-color var(--transition-ambient)`. Sitzt zwischen Container-Background (Stack-Level 1) und allen statischen Children wie `#chat-screen` (Stack-Level 3+). Body-Klasse `pui10-ambient-disabled` setzt `display: none` auf den Layer (Toggle-Off).
+- **Stage-Bubble-Shadow ab Stufe 2** (DESIGN.md 10.3): Selektor `body.pui10-ambient-stage-N .message[class]` (mit `[class]`-Attribut-Match statt blossem `.message`, damit Source-Audit-Tests die `nala_src.split(".message {")`-Slices nicht versehentlich auf den P-UI-10-Block treffen) stapelt einen Sentiment-Glow zum Tiefen-rgba(0,0,0,0.3)-Shadow: `box-shadow: 0 4px 14px var(--sentiment-current), 0 4px 8px rgba(0,0,0,0.3)`. Bei `pui10-ambient-disabled` plus Stage zusaetzlich: nur das Tiefen-Shadow, kein Glow. `@media (prefers-reduced-motion: reduce)`: alle Transitions auf 0 s (Accessibility, DESIGN.md 16).
+- **HTML**: `<div class="pui10-ambient-layer" id="pui10-ambient" data-pui10-ambient="1" aria-hidden="true"></div>` als ERSTES Child der `.app-container`, vor `#login-screen`. Plus `<div class="settings-section" data-pui10-ambient-section="1">` im Look-Tab nach der pui9-Skalierungs-Sektion mit `<input type="checkbox" id="pui10AmbientToggle" onchange="pui10_setAmbientEnabled(this.checked)">`-Toggle (44-px-Touch-Target, Beschreibung mit allen vier Farb-Mappings).
+- **JS-Konstanten**: `PUI10_HISTORY_MAX = 3` (Spec "gemittelt ueber die letzten 2-3"), `PUI10_STAGE_MAX = 5`, `PUI10_STAGE_OPACITY = [0, 0.03, 0.06, 0.09, 0.12, 0.15]` (Cap 15 %), `PUI10_LS_KEY = 'nala_sentiment_ambient'`, `PUI10_CATEGORIES = ['neutral', 'anger', 'joy', 'contemplative', 'technical']`, `PUI10_STAGE_CLASSES`/`PUI10_CATEGORY_CLASSES` als praeparierte Klassen-Listen.
+- **JS-Helper `pui10_isAmbientEnabled()`**: liest `localStorage[nala_sentiment_ambient]`, Default ON via `v !== 'false'`-Check (Spec: "Default ON, mit Opt-Out fuer Privacy-bewusste User").
+- **JS-Helper `pui10_classifySentiment(userBlock)`**: Strenge Bedingungen: `consensus.source === 'bert+prosody'` (nicht nur BERT — Spec "BERT allein → KEIN Effekt, zu unzuverlaessig"), `!consensus.incongruent` (Inkongruenz blockt komplett), beide `bert` und `prosody` vorhanden. Mapping aus `prosody.mood` + `bert.label`: `angry`/`stressed`/`anxious` + label != positive → anger; `happy`/`excited` + label != negative → joy; `calm`/`sad`/`tired` + neutral label → contemplative; beides neutral → technical; sonst neutral. Defensive non-string-Checks via `String(...).toLowerCase()`.
+- **JS-Helper `pui10_majority(history)`**: Mehrheits-Voter ueber die letzten N Kategorien. Iteriert RUECKWAERTS, sodass bei Gleichstand (z.B. zwei mal joy + zwei mal anger) die JUENGSTE Klassifikation gewinnt — vermeidet Fluttern zwischen Stimmungen. Liefert `{category, count}`.
+- **JS-Helper `pui10_pushSentiment(category)`**: shiftet History (max 3), prueft Mehrheit (≥ 2 Kategorien gleich), drei Branches: kein Konsens → Stufe 0 + neutral; gleiche Kategorie wie current → +1 Stufe (capped via `Math.min(stage+1, 5)`); andere Kategorie → Stufe 1 mit neuer Kategorie. Wenn Toggle OFF: ruft sofort `pui10_resetAmbient()` und returnt — kein State-Update.
+- **JS-Helper `pui10_applyAmbient()`**: setzt `--sentiment-current` (via `'var(--sentiment-' + category + ')'`-Indirektion am `:root`, theme-anpassbar) und `--sentiment-opacity` als String. Bei Stufe 0 oder neutral: `transparent` + `'0'`. Plus genau eine Body-Stage-Klasse (`pui10-ambient-stage-0`..`5`) und genau eine Body-Category-Klasse (`pui10-sentiment-anger`..`technical`/`neutral`) — alle anderen werden vorher entfernt.
+- **JS-Helper `pui10_resetAmbient()`**: leert History, setzt currentCategory auf neutral, currentStage auf 0, ruft `pui10_applyAmbient()`. Wird beim Toggle-Off und bei `resetTheme()` aufgerufen.
+- **JS-Helper `pui10_setAmbientEnabled(on)`**: persistiert in localStorage (`'true'`/`'false'`-String), kippt die Body-Klasse `pui10-ambient-disabled`, ruft bei Off `pui10_resetAmbient()` (sofortiger Cleanup), bei On `pui10_applyAmbient()` (CSS-Vars sicher setzen).
+- **JS-Helper `pui10_initAmbient()`**: Bootstrap. Liest Toggle-State aus localStorage, synct die Checkbox-UI, kippt die Body-Klasse, ruft `pui10_applyAmbient()` fuer initialen CSS-State. Wird per DOMContentLoaded oder direkt aufgerufen (analog P-UI-9-Boot-Pattern).
+- **`bootPui10Ambient`-IIFE**: registriert `pui10_initAmbient` als DOMContentLoaded-Listener (oder direkt wenn DOM bereits ready).
+- **Caller-Hook** im `if (data.sentiment) {...}`-Block direkt nach `applySentimentToLastBubbles(data.sentiment)`: `try { if (typeof pui10_pushSentiment === 'function') pui10_pushSentiment(pui10_classifySentiment(data.sentiment.user)); } catch (_e) {}` — fail-quiet, NUR User-Block (Spec: "NUR User-Stimmung, nicht LLM-Output"). Beide Aufrufe (applySentimentToLastBubbles fuer Triptychon-Emojis und pui10_pushSentiment fuer Ambient) koexistieren.
+- **`resetTheme()`-Erweiterung**: ruft zusaetzlich `pui10_resetAmbient()` (Stimmungs-State weg). Toggle-Praeferenz `nala_sentiment_ambient` bleibt unangetastet — sie ist eine User-Praeferenz, kein Theme-Wert.
+- **addMessage-Signatur unveraendert** (`function addMessage(text, sender, tsOverride)`) — bewusste Architektur damit P-UI-2/6/7/8/9-Source-Audit-Tests, die exakt auf diesen Header splitten, weiter gruen bleiben.
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_10_sentiment_ambient.py`](zerberus/tests/test_p_ui_10_sentiment_ambient.py): fuenf Klassen, 89 Tests. `TestSourceWiringCSS` (24) prueft `:root`-Variablen, Layer-Properties, `isolation: isolate` auf `.app-container`, Stage-Shadow-Selektoren, Reduced-Motion-Block. `TestSourceWiringJSHelpers` (35) prueft alle Konstanten + Klassifikator-Branches + Mehrheits-Voter (Rueckwaerts-Iteration!) + State-Machine-Transitions + Apply-Properties + Reset + Set-Enabled + Init + Boot-IIFE. `TestSettingsUiWiring` (12) prueft die Toggle-HTML-Struktur (Checkbox-Type, ID, onchange-Handler, 44-px-Touch-Target, Vier-Farb-Mappings im Beschreibungstext) + Caller-Hook-Position + try/catch + typeof-Guard + resetTheme-Migration + Layer-HTML-Audit. `TestKollisionMitVorgaengernPatches` (12) prueft disjunkten Namespace gegenueber P-UI-1..9 + Co-Existenz mit `applySentimentToLastBubbles` + addMessage-Signatur invariant. `TestPUiTenInlineMarker` (8) verlangt `P-UI-10` mehrfach im Source. Slice-basiert, kein Browser/Playwright.
+
+**Was P-UI-10 bewusst NICHT macht:**
+
+- **Sentiment-State persistieren ueber Page-Reload.** History + currentStage + currentCategory bleiben nur im JS-Memory — beim Reload wird auf neutral/0 zurueckgesetzt. Das ist absichtlich: Stimmung ist ein Live-Phaenomen, nicht ein Persistenz-Wert. Nur der User-Toggle (Default ON) wird in localStorage gehalten.
+- **Sentiment-Ambient bei Reload-Bubbles aus loadSession.** `loadSession` rendert alte Messages ohne Sentiment-Data (Backend speichert das pro Message nicht). Beim Session-Switch wird der Ambient nicht "ge-replayed" — die naechste neue User-Message setzt den State neu. Folge-Patch: Backend koennte Sentiment-Konsens persistieren, Frontend koennte beim loadSession ueber die letzten N Messages iterieren.
+- **Beim Session-Wechsel den Ambient-State auf 0 zuruecksetzen.** Aktuell traegt der State zwischen Sessions weiter — das ist eher ein Feature ("der User ist gerade froehlich, egal ob er einen anderen Chat oeffnet") als ein Bug. Falls Chris/Jojo einen Session-spezifischen Ambient wollen, ist das ein 5-Zeilen-Folge-Patch (`pui10_resetAmbient()` in `loadSession`/`startNewChat`).
+- **5-er Stufen-System statt 4-er.** Spec sagt "Stufen 0-4", aber das praktische Mapping mit Opacity 0/3/6/9/12/15 ergibt natuerlich 6 Werte (inkl. Cap). Implementation behaelt 6 Stufen (0..5), die Spec-Bezeichnungen "Neutral / Zart / Erkennbar / Deutlich / Spuerbar / Max" mappen 1:1 auf die Werte. Kein Daten-Konflikt.
+- **Live-Cap-Detection / Auto-Adapt-Speed bei `prefers-reduced-motion`-Kippung.** Die `@media (prefers-reduced-motion: reduce)`-Regel setzt Transitions auf 0 s, aber wechselt der User die OS-Praeferenz LIVE waehrend Nala laeuft, gibt es keinen JS-Listener auf `matchMedia('(prefers-reduced-motion: reduce)')` — der Wechsel wird erst beim naechsten Render gegriffen. Spec hat keine Aussage dazu, akzeptable Edge-Case.
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+- **README.md / huginn_kennt_zerberus.md / PROJEKTDOKUMENTATION.md / DESIGN.md** — alle vier upgedatet (Doku-Pflicht laut WORKFLOW.md). Spiegel-Kopie `docs/RAG Testdokumente/huginn_kennt_zerberus.md` ebenfalls upgedatet.
+
+**Lessons (3):**
+
+1. **`isolation: isolate` ist die minimale Aenderung, um einen Container zum eigenen stacking context zu machen.** P-UI-10 braucht den Effekt, dass `z-index: -1` auf einem Child von `.app-container` *innerhalb* des Containers gefangen bleibt — sonst schlaegt der negative z-index auf body-Ebene durch und der Layer rutscht hinter den Container-Background. Drei Optionen waeren moeglich: `position: relative` mit `z-index: 0` (aendert das Layout potentiell), `transform: translateZ(0)` (kann aber andere Layout-Probleme triggern, Sub-Pixel-Rendering), oder `isolation: isolate` (CSS-Property speziell dafuer designed, keine Layout-Side-Effects). **Faustregel:** wenn ein Element zum Container fuer einen `z-index: -1`-Child werden soll und keine bestehende Stacking-Context-Trigger-Property gesetzt ist, `isolation: isolate` ist der saubere Pfad — kein Layout-Side-Effect, klare Intention im Code-Review.
+
+2. **Substring-Splits in Source-Audit-Tests sind robust nur, wenn die Substring-Form unique im Source ist.** Erste P-UI-10-Iteration nutzte `body.pui10-ambient-stage-N .message,` als Selektor-Liste — die Test-Slices in `test_p_ui_1_layout.py` (`nala_src.split(".message {")[1]`) traten auf den P-UI-10-Block statt auf den realen `.message`-Definition-Block, weil `.message {` schon im pui10-CSS als Substring der Selektor-Liste-End-Form vorkam. Fix: `.message[class]` als Attribut-Match — semantisch identisch (jedes `.message`-Element hat ein `class`-Attribut, immer wahr), aber der literale Substring `.message {` taucht im pui10-Block nicht mehr auf. **Faustregel:** wenn Source-Audit-Tests Substring-Splits nutzen, jeder neue Patch muss seine Selektoren so formulieren, dass die "kanonische Form" des Bestand-Selektors NICHT als Substring im neuen Block auftaucht. Backstop: einmal `grep ".message {" nala.py` nach jedem Patch ausfuehren, um zu verifizieren dass es nur an EINER Stelle vorkommt.
+
+3. **State-Machines mit Last-Wins-Tie-Break sind weniger flackerig als First-Wins.** Der `pui10_majority`-Voter iteriert RUECKWAERTS durch die History, sodass bei Gleichstand (z.B. 2× joy + 2× anger nach 4 Klassifikationen mit History-max 3) die juengste Klassifikation gewinnt. Alternative First-Wins (vorwaerts-Iteration mit `>`) wuerde bei Stimmungswechsel manchmal noch die alte Stimmung halten — Flacker-Effekt. P-UI-10-Faustregel: **bei einer State-Machine, die ein Live-Signal interpretiert (Stimmung, Aktivitaet, etc.), tie-break auf das juengste Sample.** Im Conflict-Fall folgt der State der aktuellen Realitaet, nicht der historischen Mehrheit. Backstop: `test_majority_voter_iteriert_rueckwaerts` zementiert die Iteration.
+
+**Tests:** 89 neue in [`zerberus/tests/test_p_ui_10_sentiment_ambient.py`](zerberus/tests/test_p_ui_10_sentiment_ambient.py) — fuenf Klassen: `TestSourceWiringCSS` (24), `TestSourceWiringJSHelpers` (35), `TestSettingsUiWiring` (12), `TestKollisionMitVorgaengernPatches` (12), `TestPUiTenInlineMarker` (8). Alle 560 UI-relevanten Tests gruen lokal (test_p_ui_10 89 + test_p_ui_9 59 + test_p_ui_8 83 + test_p_ui_7 54 + test_p_ui_6 48 + test_p_ui_5 53 + test_p_ui_4 29 + test_p_ui_3 26 + test_p_ui_2 20 + test_p_ui_1 16 + test_settings_umbau 24 + test_nala_bubble_layout 15 + test_nala_adapter 14 + test_p203d3_nala_code_render 30). test_p203d3 `TestJsSyntaxIntegrity` (node --check) gruen — kein JS-Syntax-Fehler nach Edit. Pre-existing-Failures unveraendert: 1 `test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 seit P-UI-4). Nicht durch P-UI-10 verursacht.
+
+**Logging-Tag:** keiner — P-UI-10 ist reines Frontend-CSS+JS-Patch, kein neuer Server-Code-Pfad.
+
+---
+
+## Vorletzter Patch (Referenz)
 
 **P-UI-9** — Phase 5c Schritt 9: 2-Achsen-Skalierung (UI-Scale + Schriftgröße als Stepper) (2026-05-08)
 
@@ -64,7 +117,7 @@ Neunter Code-Patch der UI-Redesign-Phase. Ersetzt den 1-Achsen-UI-Slider (Patch 
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-8** — Phase 5c Schritt 8: Scroll-Navigationsleiste (Gabelungs-Design) (2026-05-08)
 
@@ -108,7 +161,7 @@ Achter Code-Patch der UI-Redesign-Phase. Vertikaler Strich am linken Bildschirmr
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-7** — Phase 5c Schritt 7: LLM-Icon-Anzeige (2026-05-08)
 
@@ -153,7 +206,7 @@ Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt ein kleines I
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
 
@@ -193,7 +246,7 @@ Sechster Code-Patch der UI-Redesign-Phase. Wenn die LLM-Antwort einen `<think>..
 
 ---
 
-## Vorvorvorheriger Patch (Referenz)
+## Frueherer Patch (Referenz, ausserhalb Hot-Window)
 
 **P-UI-5** — Phase 5c Schritt 5: Projektseite als eigene View (2026-05-08)
 
