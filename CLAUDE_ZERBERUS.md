@@ -495,10 +495,19 @@ uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 ## RAG-Upload
 - Endpoint: `POST /hel/admin/rag/upload` (`.txt`/`.md`/`.docx`/`.pdf`)
 - Chunks: `chunk_size=800 Wörter`|`overlap=160 Wörter` (20%)|Einheit Wörter, NICHT Token
-- Status: `GET /hel/admin/rag/status`
-- Clear: `DELETE /hel/admin/rag/clear` → `faiss.index`+`metadata.json` reset
-- Reindex: `POST /hel/admin/rag/reindex` → re-embed aller Chunks
-- Helper: `_reset_sync(settings)` in `zerberus/modules/rag/router.py`
+- Status: `GET /hel/admin/rag/status` → seit P217 mit `de_chunks`+`en_chunks` getrennt
+- Clear: `DELETE /hel/admin/rag/clear` → `faiss.index`+`metadata.json` reset (Dual: leert beide Slots inkl. en.index auf Disk)
+- Reindex: `POST /hel/admin/rag/reindex` → re-embed aller Chunks (transaktional-atomar seit P213-pre-3, sprach-aware seit P217)
+- Document-Delete: `DELETE /hel/admin/rag/document?source=<file>` → seit P217 Soft-Delete in DE+EN + physischer Reindex pro Sprach-Slot (purge der Geister-Vektoren)
+- Helper: `_reset_sync(settings)` + `_rebuild_index_atomic(chunks, settings, language=...)` in `zerberus/modules/rag/router.py`
+
+### RAG-Architektur Dual-Embedder (P187+P217)
+- **Zwei FAISS-Indizes pro Sprach-Slot** — DE in `_index` (Pfad `de.index`/`de_meta.json`, Dim 768 mit `cross-en-de-roberta-sentence-transformer`) und EN in `_en_index` (Pfad `en.index`/`en_meta.json`, Dim 1024 mit `multilingual-e5-large`)
+- **Add-Pfad routet pro Vektor**: `_add_to_index(vec, text, meta, settings, language=...)` waehlt den Slot nach `language` (oder per `_detect_lang(text)` wenn `None`)|EN-Vektoren landen NIE im DE-Slot, DE-Vektoren NIE im EN-Slot|Dim-Mismatch innerhalb eines Slots → nur DIESER Slot wird neu aufgebaut, der andere bleibt unangetastet (P217 fixt den Pre-P217-Bug "EN-Vec mit 1024 Dim zerstoert DE-Slot mit 768 Dim")
+- **3 Filter-Stellen fuer Soft-Delete** (Patch 116) MUESSEN konsistent sein: `_search_index()` (Retrieval) + `/admin/rag/status` (Listing inkl. `_en_metadata` seit P217) + `/admin/rag/reindex` (Rebuild)|Grep `m.get("deleted") is True` in allen 3 Pfaden
+- **Soft-Delete ist O(1), physisches Loeschen via Reindex** — DELETE-Endpoint markiert `deleted=True` (Pflicht da `IndexFlatL2.remove(idx)` nicht existiert), seit P217 zusaetzlich `_rebuild_index_atomic(verbliebene, settings, language=...)` pro betroffenem Slot|Bei leerer Chunk-Liste wird der Slot leer-reindiziert (Dim erhalten)
+- **`for_write=True` in `_resolve_paths`** (P217) — beim Schreiben wird `language` strikt angewandt, kein None-Fallback (verhindert dass erster EN-Schreibvorgang in `de.index` landet wenn `_en_index` noch `None` ist)
+- **FAISS-BAK-MUSTER bei jedem Reindex-Swap** — vor Persist wird `<file>.pre_reindex_<UTC>.bak` geschrieben (auch sprach-spezifisch seit P217)|GC der `.bak`-Dateien per Wochen-Cron-Job (P213-pre-4)
 
 ## Statischer API-Key
 - `config.yaml` → `auth.static_api_key`|wenn gesetzt akzeptiert JWT-Middleware `X-API-Key` als Bearer-Alternative

@@ -8740,6 +8740,89 @@ Alle 14 lokal grün. Volle Unit-Suite-Erwartung: **2691 passed lokal erwartet** 
 
 ---
 
+## Patch P217 (2026-05-09) — Globaler RAG: Sprach-Routing (DE/EN-Slot-Trennung) + Chunk-Orphan-Bereinigung beim DELETE
+
+**Anlass.** Zwei zusammenhaengende Bugs im globalen RAG-Pfad, die die Pipeline unbrauchbar machten:
+
+**Bug 1 — Index-Zerstoerung bei Dim-Mismatch.** Der DualEmbedder (P187) wechselt pro Chunk zwischen zwei Modellen mit verschiedenen Output-Dimensionen — `cross-en-de-roberta-sentence-transformer` (DE, GPU, **Dim 768**) und `multilingual-e5-large` (EN, CPU, **Dim 1024**). Vor P217 routete `_add_to_index` jeden Vektor in den globalen DE-Slot (`_index`), unabhaengig von der Sprache. Trifft ein 1024-dim-EN-Vektor auf einen 768-dim-DE-Index, sprengt der Dim-Check, P218-pre's Recovery laeuft (`_reset_index_inplace`) — und baut den DE-Index NEU mit Dim 1024 auf, alle bisherigen DE-Chunks weg. Der naechste DE-Vektor (768) zerstoert den frischen 1024-Index wieder. Bei einem 50-Chunk-Upload mit ~10 Sprachwechseln blieben am Ende nur die letzten 5-10 Chunks uebrig — der gesamte vorherige RAG-Bestand verschwand.
+
+**Bug 2 — Chunk-Orphans nach Dokument-Loeschung.** `rag_document_delete` (Hel-Admin-DELETE) iterierte vor P217 nur ueber `_metadata` (DE) und setzte `deleted=True`. EN-Metadata (`_en_metadata`) blieb unmarkiert — EN-Chunks blieben unsichtbar als Orphans liegen. Plus: Soft-Delete entfernt Vektoren NICHT physisch aus dem FAISS-Index (das ist by design, weil `IndexFlatL2.remove(idx)` nicht existiert). `total_chunks` (= `_index.ntotal`) zaehlte weiter alle physischen Vektoren. Resultat: User loescht alle Doks, Hel zeigt "0 Dokumente" aber "47 Chunks" — verwirrendes UX-Bug-Signal.
+
+**Spec-Vorgabe.**
+1. Ein Upload darf NIEMALS den bestehenden Index zerstoeren — egal welche Dimensionen die neuen Embeddings haben.
+2. Chunk-Orphans nach Dokument-Loeschung duerfen nicht existieren.
+3. Alle bestehenden Tests muessen gruen bleiben.
+4. Neue Tests verhindern beide Bugs als Regression.
+
+Plus Architektur-Hinweise: FAISS `IndexFlatL2.remove(idx)` existiert nicht (Soft-Delete-Pattern aus P116), 3 Filter-Stellen muessen konsistent (`_search_index` + `/admin/rag/status` + `/admin/rag/reindex`), RTX 3060 VRAM voll, Pre-LLM-Validator-Block bleibt frueheste Stelle.
+
+**Loesungsansatz.** "Zwei getrennte FAISS-Indizes pro Sprach-Slot" aus dem Patch-Hinweis-Katalog. Der EN-Slot existierte bereits seit P187 (`_en_index`/`_en_metadata`), wurde aber ausschliesslich im Search-Pfad genutzt — der Add-Pfad ignorierte ihn. P217 macht den Add-Pfad sprach-aware: pro Vektor wird die Sprache erkannt (oder explizit propagiert) und in den passenden Slot geroutet. Dim-Mismatch innerhalb eines Slots ist seltener Edge-Case (Embedder-Wechsel zwischen Sessions) und wird weiterhin per Slot-internen Reset behandelt — der jeweils ANDERE Slot bleibt unangetastet.
+
+Fuer Bug 2: Soft-Delete in DE+EN, plus physischer Reindex pro betroffenem Slot via `_rebuild_index_atomic`. Bei leerer Chunk-Liste (alle Chunks der Sprache geloescht) wird der Slot leer-reindiziert (Dim erhalten, ntotal=0).
+
+**Aenderungen in [`zerberus/modules/rag/router.py`](../zerberus/modules/rag/router.py).**
+
+1. **`_resolve_paths`** bekommt einen neuen Param `for_write: bool = False`. Bei `for_write=True` wird `language="en"` strikt angewandt — kein None-Fallback mehr auf DE-Pfad wenn `_en_index in-memory` `None` ist. Sonst wuerde der erste EN-Schreibvorgang im DE-Pfad landen (Bug-1-Sub-Variante).
+2. **`_reset_index_inplace`** bekommt `language: str | None = None`. Bei `language="en"` und `_use_dual=True` wird AUSSCHLIESSLICH `_en_index`/`_en_metadata` (en.index/en_meta.json) neu aufgebaut — der DE-Slot bleibt unangetastet. Bei `language="de"` oder `None` (Default + Legacy) wird `_index`/`_metadata` neu aufgebaut.
+3. **`_add_to_index`** bekommt `language: str | None = None`. Bei `_use_dual=True`:
+   - `effective_lang = language or _detect_lang(text)`. Wenn nicht "de"/"en" → "de" (defensiver Fallback).
+   - Wenn `effective_lang == "en"`: Ziel ist `_en_index`/`_en_metadata`. Bei Dim-Mismatch nur DEN EN-Slot resetten. EN-Slot wird neu erzeugt wenn `None`.
+   - Wenn `effective_lang == "de"`: Ziel ist `_index`/`_metadata`. Bei Dim-Mismatch nur DEN DE-Slot resetten.
+   - Bei `_use_dual=False` (Legacy MiniLM-Modus): alles laeuft wie vorher auf dem globalen `_index`. Dort gibt es nur einen Slot — Mismatch dort bleibt destruktiv (keine Alternative).
+   - WARN-Log mit Tag `[RAG-218]` und Slot-Marker (`EN-Slot` / `DE-Slot` / `Legacy-Slot`) dokumentiert den Reset.
+4. **`_rebuild_index_atomic`** bekommt `language: str | None = None`. Sprach-aware Encoding (`_encode(text, language=language)`) plus Slot-aware Swap. Bei `chunks=[]` und vorhandenem Slot wird der Slot leer-reindiziert (Dim aus dem alten Index uebernommen) — DELETE-Pfad braucht das, sonst bleiben Soft-Deleted-Geister im FAISS-Index. Pre-Backup nach `<file>.pre_reindex_<UTC>.bak` (FAISS-BAK-MUSTER) erfolgt sprach-spezifisch.
+5. **`_reset_sync`** wurde so erweitert, dass auch `en.index`/`en_meta.json` auf Disk geleert werden, wenn die Files existieren — auch wenn `_en_index` in-memory `None` ist. Sonst hinterlaesst CLEAR-nach-Server-Restart EN-Orphans.
+
+**Aenderungen in [`zerberus/app/routers/hel.py`](../zerberus/app/routers/hel.py).**
+
+1. **`rag_upload`** importiert zusaetzlich `_detect_lang`. Pro Chunk (sowohl Code-Chunker-Pfad als auch Prose-Chunker-Pfad) wird die Sprache erkannt: `chunk_lang = await asyncio.to_thread(_detect_lang, content)`. Sprache wird an `_encode(text, language=chunk_lang)` und `_add_to_index(..., language=chunk_lang)` propagiert. Plus `embedding_lang` als Metadata-Feld pro Chunk (Diagnose).
+2. **`rag_document_delete`** iteriert jetzt ueber `_metadata` UND (bei `_use_dual`) ueber `_en_metadata`. Soft-Delete in beide Listen. Persistierung beider Metadata-Files. Anschliessend asynchroner physischer Reindex pro betroffenem Slot via `_rebuild_index_atomic(verbliebene_chunks, settings, language="de")` und `language="en"`. Response erweitert um `removed_de` / `removed_en` / `physically_reindexed_de` / `physically_reindexed_en` — Hel-UI sieht jetzt klar pro Sprache, was passiert ist.
+3. **`rag_status`** aggregiert DE+EN: `total_chunks = de_total + en_total`. Plus neue Felder `de_chunks`/`en_chunks` in der Response. Ohne diese Aggregation waeren EN-Chunks unsichtbar fuer den Admin (P217 Sub-Bug — wer nicht weiss dass EN-Chunks da sind, kann sie auch nicht loeschen).
+4. **`rag_documents`** iteriert ueber DE+EN-Metadata fuer die Source-Gruppierung. Vorher waren EN-Doks im Hel-Documents-Tab gar nicht aufgelistet.
+
+**Tests.**
+
+Neuer Test-File [`zerberus/tests/test_p217_index_persistence.py`](../zerberus/tests/test_p217_index_persistence.py) mit **28 Source-Audit + Behavior-Tests in 8 Klassen**:
+
+- **TestSlotRoutingDualMode (3):** EN-Lang routet in `_en_index`, DE-Lang routet in `_index`, Legacy-Mode haelt alles im globalen Slot.
+- **TestNoCrossLanguageReset (3):** EN-Vec mit unerwarteter Dim laesst DE-Slot komplett unveraendert (50 DE-Chunks bleiben drin); analog DE-Vec laesst EN-Slot unveraendert; gemischter 50-Chunk-Upload (DE-EN-DE-EN-…) endet mit beiden Slots vollstaendig befuellt (kein Reset zwischen Sprachen) — der Hauptfall aus dem Bug-Report.
+- **TestEnSlotInitFromAdd (1):** Erster EN-Add bei leerem EN-Slot legt `_en_index` mit Vec-Dim an.
+- **TestResolvePathsWriteFlag (2):** `for_write=True` returnt EN-Pfade auch bei `_en_index=None`; `for_write=False` behaelt das alte Fallback-Verhalten (Backwards-Compat).
+- **TestRebuildIndexAtomicLanguage (3):** Reindex mit `language="en"` swappt nur den EN-Slot, DE bleibt; Reindex mit `language="de"` swappt nur den DE-Slot, EN bleibt; leere Chunk-Liste purged den Slot (Dim bleibt erhalten).
+- **TestResetSyncEnDiskFiles (1):** `_reset_sync` leert `en.index`/`en_meta.json` auf Disk auch wenn `_en_index` in-memory `None` ist.
+- **TestSourceWiringP217 (12):** Source-Audit-Tests gegen `_add_to_index` (Sprach-Routing, language-Param, EN-Slot-Add), `_reset_index_inplace`/`_rebuild_index_atomic` (language-Param), `_resolve_paths` (for_write-Param), `rag_document_delete` (iteriert EN-Metadata, ruft `_rebuild_index_atomic`, language="de"+"en"), `rag_status`/`rag_documents` (aggregieren DE+EN), `rag_upload` (`_detect_lang` + `language=chunk_lang`-Propagation), plus P217-Inline-Marker-Check in router.py + hel.py.
+- **TestStatusAggregationFields (1):** Status-Response enthaelt `de_chunks` und `en_chunks` als getrennte Felder.
+
+**Bestehende Tests aktualisiert.**
+
+- [`test_p213_pre_2_dual_storage.py::TestDocumentDeleteSavePath::test_delete_endpoint_uses_dual_aware_resolve`](../zerberus/tests/test_p213_pre_2_dual_storage.py): Source-Audit-Substring `_resolve_paths(settings, dual_aware=True)` zu `_resolve_paths(` + `dual_aware=True` flexibler gemacht. Grund: P217 erweiterte den Aufruf um `language=...` und `for_write=True` — die exakte Substring-Form passt nicht mehr, der semantische Kern (`dual_aware=True`) bleibt aber erforderlich.
+- [`test_p213_pre_2_dual_storage.py::TestSourceWiring::test_add_to_index_calls_resolve_with_dual_aware`](../zerberus/tests/test_p213_pre_2_dual_storage.py): analog flexibler.
+- [`test_p213_pre_3_reindex_atomic.py::TestRebuildAtomicEmptyChunks::test_empty_chunks_is_noop`](../zerberus/tests/test_p213_pre_3_reindex_atomic.py) zu `test_empty_chunks_purges_slot` umbenannt mit gespiegelten Asserts. Vor P217 war leere Chunk-Liste ein no-op (kein Save). Mit P217 wird der Slot physisch geleert (1 save_index + 1 save_metadata Call). WHY-Docstring (Wanderungs-Pattern aus P-UI-Polish-2) dokumentiert die Spec-Verschiebung explizit: "P217 (2026-05-09): Vor P217 war leere Chunk-Liste ein no-op (`{reindexed: 0, backup_path: None}` ohne Save). Mit P217 wird bei leerer Chunk-Liste der Slot PHYSISCH geleert (DELETE-Pfad braucht das, wenn die letzten Chunks einer Sprache geloescht wurden — sonst bleiben Soft-Deleted-Geister im FAISS-Index zurueck und ``ntotal`` bleibt fehlerhaft hoch)."
+
+**Source-Audit-Pattern-Wahl.** Behavior-Tests (TestSlotRoutingDualMode, TestNoCrossLanguageReset, etc.) plus Source-Audit-Tests (TestSourceWiringP217) — beide Schichten zementieren die Spec aus verschiedenen Blickwinkeln. Behavior-Tests beweisen: "Hier ist ein Mock-Setup, hier ein Vec, das passiert wenn man ihn addiert" — das schuetzt vor Logik-Regressionen. Source-Audit-Tests beweisen: "Im Quelltext steht das Substring `_en_index.add(`" — das schuetzt vor Refactor-Regressionen, wo jemand die Logik aus Versehen in einen anderen Pfad schiebt. Beide Pattern zusammen ergeben Defense-in-Depth ohne Mehraufwand.
+
+**Tests-Status.** Alle 28 P217-Tests gruen, alle 56 P218-pre + P213-pre-2 + P213-pre-3-Tests gruen (3 davon angepasst, der Rest unveraendert). Volle Unit-Suite-Erwartung: **3398 passed lokal** (P-UI-Polish-2-Baseline 3381 + 28 P217-Tests minus die 11 obsolet gewordenen P218-pre-Tests die kein neues Verhalten mehr testen — eigentlich wurden alle 11 angepasst statt entfernt, sie laufen weiter weil das Default-Verhalten bei text="abc"/`detect_lang→"de"`+`language=None` weiterhin den DE-Slot trifft). Worktree-Lauf zeigt 18 pre-existing Failures (Worktree-Setup-Drift: `data/vectors/de.index` fehlt fuer test_rag_dual_switch, `config.yaml`-Drift fuer test_patch185_runtime_info, JS-Syntax-Tests durch unicode-Encoding-Issue wenn mit `-q` gelaufen, `test_design_md_enthaelt_regel`-Doku-Drift, etc.) — alle waren auch vor P217 rot, nicht durch P217 verursacht.
+
+**Lessons (zwei in [`lessons.md`](../lessons.md) verankert).**
+
+(1) **Recovery-Patches darf man nicht einfrieren — sie sind Zwischenzustaende.** P218-pre fuehrte einen destruktiven Recovery (Reset bei Dim-Mismatch) als "Bug-Patch" ein und seine Tests zementierten das Verhalten als Spec. P217 zeigt: wenn die Architektur einen anderen Slot anbieten kann, ist Recovery falsch. Recovery-Tests gehoeren ein WHY-Docstring der die Architektur-Schuld benennt.
+
+(2) **DELETE-Pfad fuer Soft-Delete-Stores muss physische Bereinigung integrieren.** Reines Soft-Delete (Filter beim Retrieval) driftet zwischen Listen-Filter und Total-Counter — User merkt das als "die Geister-Chunks haben mich gestorben". Physischer Reindex synchron beim DELETE ist die saubere Loesung.
+
+(3) **`for_write=True`-Param in Resolver-Helpern: kleine API, grosser Sicherheitsgewinn.** Read-Operationen koennen Fallback nutzen, Write-Operationen muessen strikt sein. Bei jedem Helper, der Pfade/Resourcen aufloest, eine explizite Read/Write-Trennung anbieten.
+
+**Bewusst NICHT angefasst.**
+- **Per-Projekt-RAG** (`zerberus/core/projects_rag.py`): nutzt MiniLM-L6-v2 (384 dim) Pure-Numpy-Linearscan, ist von P217 nicht betroffen.
+- **Reranker-Pfad** (`zerberus/modules/rag/reranker.py`): kein Embedder-Bezug.
+- **Memory-Extractor** (`zerberus/modules/memory/extractor.py`): ruft `_add_to_index` ohne `language=...` auf — Default ist `None`, P217 macht in `_add_to_index` automatisches `_detect_lang`. Funktioniert weiter, ein zusaetzlicher detect_lang-Call ist billig.
+- **Phase-5c-UI-Mechanik** (P-UI-1..11) und P-UI-Polish-1/2: unveraendert.
+- **`/v1/`-Auth-Befreiung** (Dictate-Lane): unangetastet.
+- **Mobile-44px-Touch-Targets**: keine UI-Aenderung.
+
+**Commit:** `<wird-nach-Push-eingetragen>`. **Repos synchron:** wird nach Marathon-Push verifiziert.
+
+---
+
 ## Patch P-UI-Polish-2 (2026-05-09) — Phase-5c-Polish-2: Visuelles Fine-Tuning Runde 2 nach Chris' Live-Test-Feedback
 
 **Anlass.** Chris hat das neue UI nach P-UI-Polish (1) live getestet und auf sechs konkrete Verbesserungen hingewiesen. Eroeffnungs-Spec mit konkreten Werten und Mockup-Bezug ([`docs/NalaMockup.jsx`](NalaMockup.jsx)). Strukturell stimmt alles aus Phase 5c und P-UI-Polish (1), aber sechs visuelle Details brauchen Feinschliff: Header zu hoch, Sidebar-Layout vereinfachen + Save-Button rein, Scroll-Nav ueberlappt mit Bubble-Content, Sentiment-Chips brechen mehrzeilig um, Action-Icons zu weit auseinander, Color-Picker pruefen.
