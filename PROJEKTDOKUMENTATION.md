@@ -9457,3 +9457,73 @@ Plus 30 weitere huginn-doc-Tests in `test_p210_huginn_rag_sync` + `test_p213_pre
 
 *Stand: 2026-05-09, Patch P-debt-11 — Stand-Anker-Trim in `docs/huginn_kennt_zerberus.md` + Spiegel-Kopie. Schulden #6-Aufrueumung. Stand-Anker auf kompakte Bullet-Liste reduziert (P-UI-1..11 + P-UI-Polish-1/2 + P-debt-10 + P217-Detail-Beschreibungen ausgeduennt — Detail-Doku liegt in PROJEKTDOKUMENTATION.md). FAQ-Block (woertliche Stand-Fragen + kurze Antworten) jetzt in den ersten 4000 Zeichen — `Bei welchem Patch sind wir` bei Pos 3473, `Wie ist der aktuelle Stand` bei Pos 3902. Drei Triple-Backtick-Stellen entfernt (P-UI-11-Code-Marker durch Trim weg, VRAM-Block in Inline-Text umgeschrieben). Neue Sektion „Aktuelle Konfiguration (Live-Werte zur Laufzeit)" verweist auf den dynamisch generierten `[Aktuelle System-Informationen]`-Block aus P185. Heilt 4 huginn-doc-Failures (test_p213_pre_4 + test_patch169 + test_patch185 2x). 34/34 huginn-doc-Tests gruen lokal nach Trim. Reine Doku-Wartung, kein Code-Pfad. Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN.*
 
+---
+
+## Patch P-UI-Hel-Split — Defensive CSS-Hardening fuer Hel-UI im Splitscreen-Modus (Schulden #9)
+
+**Datum.** 2026-05-09
+
+**Auslöser.** Im HANDOVER nach P-debt-11 (2026-05-09) stand Schulden #9 als offener UI-Bugfix-Pfad: `UI_BUG_HEL_SPLITSCREEN.md` (gemeldet 2026-05-07 von Chris) beschreibt einen Hel-Layout-Bug im Splitscreen-Modus — die Hel-Oberflaeche wird "in der Mitte abgeschnitten", "auch bei reichlich Breite/Hoehe". Vermutung im Bug-Report: CSS-Layout mit fixer Mittel-Breite oder absolute-Positionierung statt responsive Grid/Flex; vermutlich in Hel-Templates (`zerberus/templates/hel*.html`) oder Hel-CSS (`zerberus/static/hel*.css`).
+
+**Diagnose.** Hel-UI ist NICHT in Templates/CSS, sondern Inline-Style-Block in [`zerberus/app/routers/hel.py`](zerberus/app/routers/hel.py) (6548 Zeilen, `ADMIN_HTML`-Konstante mit ~213 KB HTML/CSS/JS). Drei plausible Splitscreen-Anti-Patterns identifiziert:
+
+1. **Inline-Style-Grids mit `1fr 1fr` und `1fr 1fr 1fr`** (vier 2-Spalten-Stellen plus eine 3-Spalten-Stelle). Bei Splitscreen-Breite (typisch 600-900 px) bleibt `1fr 1fr` zwei Spalten á ~280-440 px. Wenn ein Inhalt (langer Input, breite Tabelle, Chart-Container) eine `min-content > Spaltenbreite` hat, treibt es das Grid horizontal ueber den Container. `body` ist Default-`overflow: visible`, der Overflow rastet auf dem nahesten scrolling ancestor — was im Hel-Layout der html-Layer ist. Resultat: horizontaler Scrollbar plus optisch der Eindruck "Mitte abgeschnitten" (rechte Haelfte des sichtbaren Bereichs ist Overflow).
+
+2. **`.hel-tab-nav` mit `position: sticky; top: 0; margin: 0 -20px 14px -20px`** ragt 20 px ueber den Container nach links/rechts hinaus. Bei `body { padding: 20px }` ist das genau die Body-Innenkante. Bei reduziertem Body-Padding (Splitscreen) bleibt der negative Margin auf 20 px, was Tab-Nav 8 px ueber die Body-Padding-Grenze treibt.
+
+3. **Container-Wurzel `.container { max-width: 1400px; margin: 0 auto }` ohne explizites `width: 100%`** verlaesst sich auf Block-Default. Im Splitscreen-Browser-Quirk (insbesondere Edge mit Snap-Layouts) kann das Block-Default auf `intrinsic-width` rasten, was bei langer Inline-Inhalt den Container ueber die Viewport-Breite treibt.
+
+**Verifikations-Pfad.** Coda-Worktree hat keine Chrome-Extension verbunden — visuelle Reproduktion ueber Browser-Resize war nicht moeglich. Stattdessen Versuch via FastAPI-Standalone-Server (`hel_preview_server.py` als 50-Zeilen-Stub mit `mount('/static', StaticFiles)` + `HTMLResponse(ADMIN_HTML)`): Server startete sauber, lieferte HTML, aber ohne aktive Chrome-Extension keine visuelle Inspection moeglich. Server gestoppt + Stub-Files geloescht — kein dauerhafter Side-Effect.
+
+**Fix.** Defensive CSS-Schicht — kein Refactor der Inline-Style-Grids (Memory-Regel "Don't add abstractions beyond what the task requires"), sondern reine CSS-Erweiterung in zwei Edits:
+
+- **Edit 1 (html/body/container Hardening) in [`zerberus/app/routers/hel.py`](zerberus/app/routers/hel.py)** im Style-Block direkt nach `* { box-sizing: border-box; }`:
+  - `html { box-sizing: border-box; min-height: 100%; overflow-x: hidden; }` — Boden-Sperre fuer horizontalen Overflow auf html-Layer, das ist der nahste scrolling ancestor wenn body `overflow: visible` ist.
+  - `body { ...; min-height: 100vh; overflow-x: hidden; }` — zweite Schicht falls eine Browser-Variante den html-Layer ignoriert.
+  - `.container { max-width: 1400px; margin: 0 auto; width: 100%; }` — explizite Breiten-Anker.
+
+- **Edit 2 (Splitscreen-Breakpoint)** direkt vor dem existing Patch-90-Landscape-Media-Query:
+  - `@media (max-width: 900px) { ... }` mit:
+    - `body { padding: 12px; }` (default 20px)
+    - `.hel-section-body { padding: 14px; }` (default 20px)
+    - `.card { padding: 14px; margin-bottom: 14px; }` (default 20px / 20px)
+    - `.hel-tab-nav { margin: 0 -12px 14px -12px; padding: 6px 12px 0 12px; }` (default -20px / 14px / 0)
+    - `.container > * { min-width: 0; }` — Flex-/Grid-Items-Schrumpf-Befreiung (verhindert min-content-Overflow)
+    - `[style*="grid-template-columns:1fr 1fr 1fr"] { grid-template-columns: 1fr !important; }` — 3-Spalten-Stack auf 1
+    - `[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }` — 2-Spalten-Stack auf 1
+    - `#messagesTable td { max-width: clamp(120px, 32vw, 200px); }` — Cell-Limit skaliert mit Viewport-Breite (default 200px war zu breit)
+
+**Reihenfolge-Falle bei Substring-Match.** `[style*="1fr 1fr"]` matched auch `1fr 1fr 1fr`. Daher MUSS der spezifischere 3-Spalten-Selektor VOR dem allgemeinen 2-Spalten-Selektor stehen — sonst ueberschreibt CSS-Source-Order das spezifischere Verhalten. Test `TestSplitscreenGridStacking::test_grid_3col_stack` zementiert diese Reihenfolge per `block.find()`-Vergleich (`idx_3 < idx_2`).
+
+**Tests.** Neuer File [`zerberus/tests/test_p_ui_hel_split.py`](zerberus/tests/test_p_ui_hel_split.py) mit **36 Source-Audit-Tests in 12 Klassen**:
+- `TestHtmlLayerHardening` (4): html-Block existiert, overflow-x: hidden, min-height: 100%, box-sizing: border-box
+- `TestBodyLayerHardening` (3): body overflow-x: hidden, min-height: 100vh, default-padding 20px unangetastet
+- `TestContainerHardening` (3): width: 100%, max-width: 1400px bleibt, margin: 0 auto bleibt
+- `TestSplitscreenMediaQueryExists` (3): @media (max-width: 900px) existiert, P-UI-Hel-Split-Marker im Kommentar, Schulden-#9-Referenz
+- `TestSplitscreenPaddingReduktion` (3): body 12px, hel-section-body 14px, card 14px
+- `TestSplitscreenTabNavMarginKorrektur` (2): margin -12px, padding 6px 12px 0 12px
+- `TestSplitscreenGridStacking` (3): 2col-Stack-Selektor, 3col-Stack-Selektor, **3col VOR 2col** (Reihenfolge-Test)
+- `TestSplitscreenContainerMinWidthEscape` (1): `.container > * { min-width: 0 }`
+- `TestSplitscreenMessagesTableClamp` (1): `#messagesTable td` mit `clamp(120px, 32vw, 200px)`
+- `TestKeineRegressionVorgaengerCSS` (8): landscape-media bleibt, Tab-Nav-Default-margin -20px bleibt (vor `@media`), font-preset-bar bleibt, sticky bleibt, Chart-Container 280px bleibt, container-Div bleibt, ADMIN_HTML-Const bleibt, NUR EIN html { ... }-Block
+- `TestKeineRegressionPhase5c` (2): nala.py unangetastet (Sidebar/--bubble-user-bg/sidebar-save-btn/reasoning Marker da), Marker NICHT in nala.py
+- `TestPUiHelSplitInlineMarker` (3): Marker im CSS-Kommentar, Marker mind. zweimal (html-Edit + Splitscreen-Edit), Schulden-#9-Referenz
+
+**36/36 lokal gruen.**
+
+**UI-relevante Test-Suite Regressions-Check** (10 Hel-bezogene Files: design_system, dialect_ui, hel_kleinigkeiten, p203b_hel_js_integrity, p205_hel_rag_toast, pacemaker_controls, patch169_bugsweep, patch170_hel_kosmetik, projects_ui, p_ui_hel_split + 7 P-UI-Files: p_ui_1_layout, p_ui_4_sidebar_content_shift, p_ui_polish_visual_weight, p_ui_polish_2_layout, p_ui_11_reasoning_mapping, settings_umbau): **286/286 gruen, 1 pre-existing Failure** in `test_design_system::test_design_md_enthaelt_regel` (sucht `Leitregel`/`projektuebergreifend` in DESIGN.md). Via `git stash` + Re-Run verifiziert: Failure existiert auch ohne P-UI-Hel-Split — pre-existing Schuld in DESIGN.md (Test wurde zementiert, aber die String-Erwartung passt nicht mehr zur aktuellen DESIGN.md-Fassung). NICHT durch P-UI-Hel-Split verursacht. **Empfehlung fuer naechste Session**: ein-Zeilen-Patch `P-debt-12` der entweder den Test anpasst oder DESIGN.md den Anker-String wieder einfuegt — aktueller Patch laesst es unangetastet (Memory-Regel "ein Patch, eine Aufgabe").
+
+**Logging.** Keiner — P-UI-Hel-Split ist reines CSS-Patch, kein neuer Server-Code-Pfad.
+
+**Lessons (2).**
+
+1. **Splitscreen-Bug ohne Live-Diagnose: defensives Hardening + Verifikations-Schritt** ist ehrlicher als blinder Fix. Wenn der Coda-Agent den Bug nicht visuell reproduzieren kann (Chrome-Extension nicht verbunden, Worktree-Setup-Drift), aber die Symptome typisch genug sind, ist die konstruktive Loesung: alle plausiblen Anti-Patterns systematisch absichern (html/body overflow-x, Container-width-Hardening, Inline-Style-Grid-Stacking, Padding-Reduktion in Breakpoint), Source-Audit-Tests die Sub-Selektoren zementieren, klare visuelle Verifikations-Anweisung in HANDOVER + UI_BUG-Datei (5-Punkte-Checkliste fuer Chris). Defensive Hardening hat einen viel kleineren Blast-Radius als gezielte Edits — `html { overflow-x: hidden }` plus Splitscreen-Breakpoint kann nichts schlimmer machen.
+
+2. **Inline-Style-Grids brauchen Attribute-Selectors fuer Responsive-Override.** Legacy-HTML mit `<div style="display:grid;grid-template-columns:1fr 1fr;...">` (vier Stellen in Hel allein) ist mit Klassen-Selektoren nicht erreichbar. Refactor zu Helper-Klassen waere acht HTML-Edits + Risiko fuer subtile Layout-Drift. Loesung: `[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important }`. `!important` ist Pflicht (Inline-Styles gewinnen sonst). Reihenfolge-Falle: Substring-Match — der spezifischere 3-Spalten-Selektor MUSS vor dem allgemeineren 2-Spalten-Selektor stehen, sonst ueberschreibt CSS-Source-Order das spezifischere Verhalten. Test `TestSplitscreenGridStacking::test_grid_3col_stack` zementiert die Reihenfolge.
+
+**Schulden-Status.** P-UI-Hel-Split markiert **Schulden #9 (Hel-Splitscreen-Layout-Bug)** als TEILWEISE GELOEST (Defensive-Hardening, Verifikation pending). Vollstaendige Heilung folgt nach Chris' visueller Verifikation per `Win+Pfeil`-Splitscreen-Test (5-Punkte-Checkliste in `UI_BUG_HEL_SPLITSCREEN.md`). Falls weiter Probleme sichtbar: eigener Folge-Patch P-UI-Hel-Split-2 mit Live-Diagnose (Chris liefert Screenshot). Andere Schulden unveraendert: #3 Pacemaker-Master-Toggle UI-Layout-Drift, #4 TTS-Race-Condition, #5 Settings-Cog-Mobile-UX-Frage, #6 Worktree-Setup-Drift Rest, #7 EN-Side-Add-Pfad differenzieren (Hel-UI-Wahl). **Neue Schuld #11 vorgemerkt:** `test_design_system::test_design_md_enthaelt_regel` ist pre-existing rot (DESIGN.md fehlt `Leitregel`/`projektuebergreifend`).
+
+---
+
+*Stand: 2026-05-09, Patch P-UI-Hel-Split — Defensive CSS-Hardening fuer Hel-UI im Splitscreen-Modus (Schulden #9). Vier Klassen Edits in `zerberus/app/routers/hel.py` Style-Block: html-Layer-Hardening (overflow-x: hidden, min-height: 100%, box-sizing: border-box), body-Hardening (overflow-x: hidden, min-height: 100vh), container-Hardening (width: 100%), neuer @media (max-width: 900px)-Breakpoint mit Grid-Stacking via Attribute-Selectors (`[style*="grid-template-columns:1fr 1fr 1fr"]` vor `[style*="grid-template-columns:1fr 1fr"]` wegen Substring-Match-Falle), Tab-Nav-Margin-Korrektur (-12px statt -20px), Padding-Reduktion (12/14/14px), `.container > * { min-width: 0 }`, `#messagesTable td { max-width: clamp(120px, 32vw, 200px) }`. KEIN Refactor der Inline-Style-Grids. Neuer Test-File `test_p_ui_hel_split.py` mit 36 Source-Audit-Tests in 12 Klassen — 36/36 lokal gruen. UI-relevante Test-Suite (10 Hel-Files + 7 P-UI-Files): 286/286 gruen, 1 pre-existing Failure in test_design_system (NICHT durch P-UI-Hel-Split verursacht, via git-stash bestaetigt). Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN. UI_BUG_HEL_SPLITSCREEN.md Status auf TEILWEISE GELOEST. Visuelle Verifikation durch Chris pending — 5-Punkte-Checkliste in HANDOVER + UI_BUG-Datei. Reine Doku-Wartung der Hel-CSS-Schicht, kein Code-Pfad.*
+
