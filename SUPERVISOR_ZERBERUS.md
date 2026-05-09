@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-11 (2026-05-09) — Phase 5c Schritt 11: Intent-Router → Reasoning-Mapping (Backend) — neues Modul `zerberus/core/reasoning_router.py` mit `REASONING_MAPPING`-Tabelle (deepseek/v3.2 → r1, mistral/large + thinking, claude/sonnet + thinking, llama → null), `compute_effort_score(message)` als 0..10-Heuristik, `select_reasoning_variant(...)` als Switch-Entscheidung (Default-Schwellwert 7, ENV-überschreibbar). Hook in `legacy.py` chat_completions vor dem if/else-Block, drei `llm_service.call`-Pfade bekommen `model_override=_pui11_model_override`. Pre-Call-Heuristik statt Two-Pass — kostenneutral, Spec-konform. UI-Feedback via P-UI-7-LLM-Icon. Phase 5a VOLLSTÄNDIG, Phase 5c VOLLSTÄNDIG (UI-1..11 ✅).*
+*Letzte Aktualisierung: P-debt-10 (2026-05-09) — Mini-Wartungs-Patch: Test-Anker-Fix `test_mein_ton_nicht_mehr_in_sidebar` schliesst HANDOVER-Schulden #10 (seit P-UI-4 rot wegen overlay-Backdrop-Removal). Neuer Anker `<div id="ee-modal"` (Easter-Egg-Modal Patch 100). Kein Code-Pfad beruehrt. UI-relevante Test-Suite jetzt 672/672 gruen (vorher 671/672). Letzter Code-Patch unveraendert P-UI-11 (Intent-Router → Reasoning-Mapping). Phase 5a VOLLSTÄNDIG, Phase 5c VOLLSTÄNDIG (UI-1..11 ✅).*
 
 ---
 
@@ -9,6 +9,22 @@
 Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI_REDESIGN_PROMPT.md) plus React-Mockup [`docs/NalaMockup.jsx`](docs/NalaMockup.jsx) plus erweiterte Spec [`docs/DESIGN.md`](docs/DESIGN.md) eingestellt. Aufgabe: komplettes Redesign des Nala-Chat-UI nach Mistral-Le-Chat-Vorbild plus eigene Features (Sentiment-Ambient, Scroll-Nav-Gabelung, 2-Achsen-Skalierung, Reasoning-Block, LLM-Icon, Projektseite raus aus Settings, Sidebar-Content-Shift, Layout-volle-Breite, Collapse-System, Eingabefeld-Expand). 11 Schritte als eigene Patches, dokumentiert als **Phase 5c** in [`ZERBERUS_MARATHON_WORKFLOW.md`](ZERBERUS_MARATHON_WORKFLOW.md). Kann parallel zu den Phase-5a-Folgepatches laufen — berührt nur Frontend (`zerberus/app/routers/nala.py`), nicht Backend. Bei Widerspruch zwischen `docs/DESIGN.md` und Bestand gilt DESIGN.md.
 
 **Zusatz-Bug für die UI-Session vermerkt** (gemeldet 2026-05-07 von Chris an Backend-Coda-Session `dreamy-archimedes-9c858e`, parallel zur P213-pre-4-Arbeit): Hel-Oberfläche wird im Splitscreen-Modus in der Mitte abgeschnitten — unabhängig davon wieviel Fensterplatz Hel zur Verfügung hat. Vermutung: CSS-Layout mit fixer Mittel-Breite oder absolute-Positionierung statt responsive Grid/Flex. Vermutlich in Hel-Templates (`zerberus/templates/hel*.html`) oder Hel-CSS (`zerberus/static/hel*.css`). Vollständige Bug-Beschreibung + Reproduktion in [`UI_BUG_HEL_SPLITSCREEN.md`](UI_BUG_HEL_SPLITSCREEN.md) (eigene Datei, überlebt HANDOVER-Overwrites). **Backend-Coda hat den Bug NICHT angefasst** — UI-Session ist zuständig.
+
+---
+
+## Letzter Maintenance-Patch
+
+**P-debt-10** — Test-Anker-Fix `test_mein_ton_nicht_mehr_in_sidebar` (2026-05-09)
+
+Mini-Wartungs-Patch nach Phase-5c-Abschluss. Schliesst HANDOVER-Schulden-Liste-Position #10 (Test rot seit P-UI-4 wegen overlay-Backdrop-Removal). Reine Test-Wartung, kein funktionaler Code-Pfad beruehrt — 18 Zeilen in [`zerberus/tests/test_settings_umbau.py`](zerberus/tests/test_settings_umbau.py) `TestMeinTonInSettings::test_mein_ton_nicht_mehr_in_sidebar`.
+
+- **Bug-Ursache:** Anker `</div>\n        <div class="overlay"` ist seit P-UI-4 obsolet (overlay-Backdrop entfernt, vgl. nala.py CSS-Comment Z. ~987). Fallback `find("overlay", sidebar_start)` traf den naechsten lowercase-`overlay`-String — den JS-Comment bei nala.py Z. ~5810 — und schlug die ganze Datei zwischen Sidebar-Anfang (Z. 2858) und JS-Block in den `sidebar_block`. Inklusive Settings-Modal mit `id="my-prompt-area"` (Z. 3110). Test wertete also das Settings-Modal als Teil der Sidebar — assertion fiel.
+- **Fix:** Neuer stabiler Nach-Sidebar-Anker `<div id="ee-modal"` (Easter-Egg-Modal Patch 100, Z. 2878 in nala.py). Root-Level-Geschwister direkt nach dem schliessenden Sidebar-Tag, unique in nala.py, ohne Layout-Bedeutung — verschwindet nicht beim naechsten UI-Refactor. Plus harte `assert`-Fehlermeldungen statt stiller Fallbacks. Plus WHY-Docstring der die P-UI-4-Historie dokumentiert.
+- **Tests:** `test_settings_umbau.py` 25/25 gruen (vorher 24/25 — Schulden #10). UI-relevante Test-Suite (16 Files) **672/672 gruen** (vorher 671/672). Volle Unit-Suite-Erwartung **3270 passed** unveraendert (kein neuer Test, nur 1 Failure weniger).
+- **Lesson** in [`lessons.md`](lessons.md): "Fluechtige HTML-Wrapper als Test-Anker sind brüchig — stabile IDs auf Root-Level-Elementen oder selbst-dokumentierende Comments". Plus generelles "keine `if not found: fallback to broader search`-Patterns — Fallback maskiert den Bruch und verzoegert die Diagnose um Wochen". Backstop: harte `assert anker_gefunden, "WARUM"`.
+- **Was P-debt-10 NICHT macht:** keine Refactor von `_find_sidebar_html_block` (bricht aktuell nicht, andere Tests nutzen es per Coincidence — eigener Folge-Patch wenn Drift sichtbar wird), keine UI-Aenderungen, kein Backend.
+
+Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN. Letzter Code-Patch ist und bleibt P-UI-11.
 
 ---
 

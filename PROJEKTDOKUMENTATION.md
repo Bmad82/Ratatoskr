@@ -8740,6 +8740,32 @@ Alle 14 lokal grün. Volle Unit-Suite-Erwartung: **2691 passed lokal erwartet** 
 
 ---
 
+## Patch P-debt-10 (2026-05-09) — Mini-Wartungs-Patch: Test-Anker `test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 geschlossen)
+
+**Anlass.** Der Test [`zerberus/tests/test_settings_umbau.py`](../zerberus/tests/test_settings_umbau.py) `TestMeinTonInSettings::test_mein_ton_nicht_mehr_in_sidebar` lief seit P-UI-4 rot — drei Wochen lang als HANDOVER-Schulden #10 dokumentiert, aber als "niedriger Aufwand, ~10 Zeilen Test-Code" verschoben. Diese Session greift ihn als naturlicher Folgeschritt nach Phase-5c-Abschluss auf — nichts Neues mehr in Phase 5c, kein Phase-5b-Spec, also Schulden-Abbau als naechster sinnvoller Schritt.
+
+**Bug-Ursache.** Der Test eingrenzt den Sidebar-Block per `find('<div class="sidebar"', ...)` als Start-Anker und `find("</div>\n        <div class=\"overlay\"", sidebar_start)` als End-Anker. Letzterer ist seit P-UI-4 obsolet — der overlay-Backdrop wurde bewusst entfernt (P-UI-4 verschob die Sidebar von einem `position: fixed`-Overlay zu einem `transform: translateX`-basierten Content-Shift, vgl. nala.py CSS-Comment Z. ~987 `[P-UI-4] .overlay-Backdrop entfernt`). Der eingebaute Fallback `if sidebar_end == -1: sidebar_end = nala_src.find("overlay", sidebar_start)` traf den naechsten lowercase-`overlay`-String — den JS-Comment bei nala.py Z. ~5810 — und schlug die ganze Datei zwischen Sidebar-Anfang (Z. 2858) und JS-Block in den `sidebar_block`. Inklusive Settings-Modal mit `id="my-prompt-area"` (Z. 3110 in nala.py). Test-Assertion `assert 'id="my-prompt-area"' not in sidebar_block` fiel.
+
+**Fix.** Stabiler Nach-Sidebar-Anker `<div id="ee-modal"` (Easter-Egg-Modal Patch 100, nala.py Z. 2878). Eigenschaften: (a) **unique** in nala.py (`id="ee-modal"` kommt genau einmal vor — bestaetigt per Grep), (b) **Root-Level-Geschwister** direkt nach dem schliessenden Sidebar-Tag (Z. 2875) — DOM-naechstes Sidebar-Sibling, (c) **keine Layout-Bedeutung** — das Easter-Egg-Modal ist seit Patch 100 stabil, wird vom UI-Phase-Folgepatchen nicht angefasst. Plus harte `assert sidebar_start > 0`/`assert sidebar_end > sidebar_start` mit klaren Fehlermeldungen statt stillem Fallback. Plus WHY-Docstring der die P-UI-4-Historie + den Fallback-Bug + den neuen Anker explizit dokumentiert (mit Zeilen-Verweisen) — wenn der naechste Refactor das Easter-Egg-Modal anfasst, der Test bricht sofort und erklaert sich selbst.
+
+**Tests.** `test_settings_umbau.py` 25/25 gruen (vorher 24/25 — Schulden #10). UI-relevante Test-Suite (16 Files: P-UI-1..11 + settings_umbau + nala_bubble_layout + nala_adapter + p203d3 + p212) **672/672 gruen** (vorher 671/672). Volle Unit-Suite-Erwartung **3270 passed** unveraendert (kein neuer Test, nur ein Failure weniger). Pre-existing Worktree-Drift-Failures unveraendert (Backend-Tests via `config.yaml`-Drift, nicht durch P-debt-10 verursacht — Patch beruehrt nur Test-Code).
+
+**Bewusst NICHT angefasst in P-debt-10.**
+
+- **Refactor von `_find_sidebar_html_block`.** Der Helper in `test_settings_umbau.py` hat denselben Bug-Mechanismus wie der gefixte Test (sucht `Patch 142 (B-013)` als Start-Anker → CSS-Comment Z. 834 statt HTML, sucht `class="overlay"` als End-Anker → -1 → returnt huge block). Vier andere Tests nutzen ihn ohne zu brechen — `_find_sidebar_actions_html` narrowed by `class="sidebar-actions"` (unique, line 2861), die Tests `test_abmelden_im_footer`/`test_settings_cog_im_footer` narrowed by `sidebar-footer` (auch unique). Sie passieren per Coincidence. Refactor ist eigener Folge-Patch wenn Drift sichtbar wird. P-debt-10 macht den minimal-invasiven Fix: nur den einen broken Test, mit dokumentiertem Anker-Pattern.
+- **Hel-Splitscreen-Bug** (Schulden #9). Eigener Folge-Patch.
+- **Andere pre-existing Failures** (config.yaml-Drift in Worktree): nicht in Schulden-Liste, nicht durch UI-Patches verursacht.
+
+**Lesson in [`lessons.md`](../lessons.md).** Drei Faustregeln aus P-debt-10:
+
+1. **Source-Audit-Tests brauchen stabile Anker.** Layout-Wrapper-Klassen wie `.overlay`, `.container`, `.wrapper` sind verboten als Anker — sie sterben beim ersten CSS-Refactor. Stabile Anker sind: (a) unique IDs auf Root-Level-Elementen (`<div id="ee-modal"`), (b) semantische HTML-Comments mit Patch-Marker (`Patch 142 (B-013)` wenn unique), (c) Patch-Marker im Code (`// P-UI-X` oder `# P-UI-X`).
+2. **Keine `if not found: fallback to broader search`-Patterns.** Fallback maskiert den Bruch und verzoegert die Diagnose um Wochen. Lieber harter `assert anker_gefunden, "WARUM"` mit klarer Fehlermeldung — Test bricht beim ersten Refactor sofort und erklaert sich selbst.
+3. **Schulden-Abbau ist legitimer naechster-Schritt.** Wenn keine Phase-Spec aktiv ist und keine User-Eskalation laeuft, ist die HANDOVER-Schulden-Liste der Default. Niedrig-Aufwand-Schulden zuerst (~10 Zeilen) — befreit die Test-Suite von False-Negatives, raeumt eine seit Wochen offene Doku-Schuld auf, schafft Marathon-Workflow-Konsistenz.
+
+Phase 5a (Nala-Projekte) bleibt VOLLSTAENDIG ABGESCHLOSSEN; Phase 5c (Nala UI-Redesign) bleibt VOLLSTAENDIG ABGESCHLOSSEN. P-debt-10 ist Mini-Maintenance ausserhalb der Phase-Ziele. **Letzter Code-Patch ist und bleibt P-UI-11.**
+
+---
+
 ## Patch P-UI-11 (2026-05-09) — Phase 5c Schritt 11: Intent-Router → Reasoning-Mapping (Backend)
 
 **Anlass.** Phase 5c Schritt 11 — der **finale** Code-Patch der UI-Redesign-Phase. Spec: [`NALA_UI_REDESIGN_PROMPT.md`](../NALA_UI_REDESIGN_PROMPT.md) Sektion 12 (Intent-Router → Reasoning-Mapping), [`docs/DESIGN.md`](DESIGN.md) Sektion 14.1 (UX-Prinzip "Automatisierung über manuelle Kontrolle") und 14.2 (Tabellenwerte Trigger/Mapping/UI-Feedback). Der Intent-Router schaltet bei hohem `effort_score` automatisch auf die Reasoning-Variante des aktuellen Standard-Modells um, ohne UI-Toggle. UI-Feedback laeuft via P-UI-7-LLM-Icon ("Show, don't tell"). Mit P-UI-11 ist die Phase 5c (Nala UI-Redesign) **vollstaendig abgeschlossen** — alle elf Schritte UI-1..UI-11 sind ✅.
