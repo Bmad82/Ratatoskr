@@ -8740,6 +8740,90 @@ Alle 14 lokal grün. Volle Unit-Suite-Erwartung: **2691 passed lokal erwartet** 
 
 ---
 
+## Patch P-UI-Polish-2 (2026-05-09) — Phase-5c-Polish-2: Visuelles Fine-Tuning Runde 2 nach Chris' Live-Test-Feedback
+
+**Anlass.** Chris hat das neue UI nach P-UI-Polish (1) live getestet und auf sechs konkrete Verbesserungen hingewiesen. Eroeffnungs-Spec mit konkreten Werten und Mockup-Bezug ([`docs/NalaMockup.jsx`](NalaMockup.jsx)). Strukturell stimmt alles aus Phase 5c und P-UI-Polish (1), aber sechs visuelle Details brauchen Feinschliff: Header zu hoch, Sidebar-Layout vereinfachen + Save-Button rein, Scroll-Nav ueberlappt mit Bubble-Content, Sentiment-Chips brechen mehrzeilig um, Action-Icons zu weit auseinander, Color-Picker pruefen.
+
+**Spec-Vorgabe.** Sechs Bereiche, alle mit konkreten Werten:
+1. Header-Hoehe um ~1/3 reduzieren (Schriftgroesse NICHT aendern).
+2. Sidebar-Layout neu — Aktions-Zeile mit Save-Button rechts neben "Neuer Chat", "Projekte" als eigene Zeile darunter, Separators, Projekt-Liste in der Sidebar (Pinned zuerst, sortiert wie P-UI-5), CHATS-Caption, Footer-Swap (Optionen links, Ausloggen rechts).
+3. `.chat-messages` `padding-left: 28-32px` PERMANENT — gibt Scroll-Nav Platz ohne Text-Springen.
+4. Sentiment-Chips drei in einer Zeile, kompakt.
+5. Action-Icons-Gap halbieren (Touch-Target unsichtbar erhalten).
+6. Color-Picker auf vollen RGB pruefen / ggf. ergaenzen.
+
+Plus Hinweis: Phase-5c-Strukturelle-Mechanik bleibt unangetastet.
+
+**Aenderungen in [`zerberus/app/routers/nala.py`](../zerberus/app/routers/nala.py).**
+
+1. **`.header` (Z. ~756-771)** padding `10px 15px` → `7px 15px` (vertikal um 1/3 reduziert; ~6.67px → 7px). Comment-Block dokumentiert die Aenderung explizit. Schriftgroesse 1.05em bleibt unangetastet (Spec-Vorgabe).
+
+2. **Landscape-Override `.header` (Z. ~2603)** padding `8px 12px` → `5px 12px` (analog reduziert).
+
+3. **HTML-Header (Z. ~2937-2952)** der Save-Button `<button class="icon-btn" onclick="openExportMenu()" aria-label="Exportieren" title="Exportieren">💾</button>` ist entfernt. Comment-Block dokumentiert die Wanderung ("aus dem Header entfernt — wandert ins Hamburger-Menue").
+
+4. **Sidebar-CSS (Z. ~2018-2185)** komplett restrukturiert:
+   - `.sidebar-actions` (Aktions-Zeile mit Neuer Chat + Save) — `align-items: stretch`, `margin-bottom` auf 6px reduziert.
+   - **NEU `.sidebar-save-btn`** — `flex: 0 0 auto`, kompakter Save-Button rechts in der Aktions-Zeile (44x44px Touch-Target, Diskette-Emoji + Label, transparenter Default + dezenter Hover).
+   - **NEU `.sidebar-projekte-row`** — eigene Zeile darunter, volle Breite (`display: block; width: 100%`), 44px-Touch-Target, leichter Margin-Top.
+   - **NEU `.sidebar-separator`** — subtile horizontale Linie (`border-top: 1px solid rgba(255,255,255,0.06)`).
+   - **NEU `.sidebar-projects-list`** — list-style none, kompakter Container.
+   - **NEU `.sidebar-project-item`** — kompakter Eintrag mit `border-left` als Pin/Active-Marker, 13px-Schrift (analog `.session-item` aus P-UI-Polish), Hover dezent rgba 0.06.
+   - **NEU `.sidebar-project-item.pinned`** und **`.sidebar-project-item.active`** — visuelle State-Marker (Gold-Border-Left fuer pinned + Gold-Background-Tint fuer active).
+   - **NEU `.sidebar-project-item .sidebar-project-pin`** und **`.sidebar-project-name`** — Pin-Slot (kleiner Emoji) und Name-Slot (flex 1, ellipsis).
+   - **NEU `.sidebar-chats-heading`** — kompakte Caption (font-size 11px, uppercase, letter-spacing, color rgba 0.45) ersetzt den alten `<h3>📋 Letzte Chats</h3>`.
+
+5. **Sidebar-HTML (Z. ~3055-3094)** komplett neu aufgebaut:
+   - `<div class="sidebar-header">` enthaelt: archive-search → `.sidebar-actions` (mit `<button class="sidebar-action-btn">➕ Neuer Chat</button>` + `<button class="sidebar-save-btn" id="sidebar-save-btn" onclick="openExportMenu()">💾 Chat speichern</button>`) → `<button class="sidebar-projekte-row" id="sidebar-projects-btn" onclick="openProjectsView()">📁 Projekte</button>`.
+   - `<hr class="sidebar-separator" id="sidebar-projects-separator-top">`.
+   - `<ul class="sidebar-projects-list" id="sidebar-projects-list"></ul>` (initial leer; per `renderSidebarProjects()` befuellt).
+   - `<hr class="sidebar-separator" id="sidebar-projects-separator-bottom" style="display:none;">` (versteckt wenn keine Projekte).
+   - `<div class="sidebar-chats-heading">CHATS</div>` (Caption, ersetzt alten h3).
+   - `<h3 id="pinned-heading">📌 Angepinnt</h3>` (bestand, versteckt wenn leer).
+   - `<ul class="session-list" id="pinned-list">` und `<ul class="session-list" id="session-list">` (bestand).
+   - `<div class="sidebar-footer">` enthaelt jetzt SETTINGS-COG ZUERST (`onclick="openSettingsModal()"`) DANN LOGOUT-EXIT (`onclick="doLogout()"`) — Reihenfolge geswapt (Spec: Optionen links, Ausloggen rechts).
+
+6. **`.chat-messages` (Z. ~1048-1057)** padding `20px` → `20px 20px 20px 32px` — gibt der pui8-Scroll-Nav (linker Rand, position: fixed bei left: 6px, ~16-20px Eigenbreite) PERMANENT Platz, damit Sentiment-Chips und Bubble-Icons nicht ueberlappen. Permanent (nicht erst bei Sicht der Nav), damit der Text nicht springt wenn die Nav erscheint/verschwindet.
+
+7. **`.sentiment-triptych` (Z. ~2306-2324)** mit explizitem `flex-direction: row` + `flex-wrap: nowrap` — drei Chips IMMER in einer Zeile (kein Wrap auf schmalen Viewports). Default-Sichtbarkeit unveraendert (hover/actions-visible wie P192).
+
+8. **`.sent-chip` (Z. ~2326-2336 + Touch-Override Z. ~2342)** `min-width` 44 → 36 px + `flex-shrink: 0` — kompakter, drei Chips + 2 Gaps in unter 132px (passt auch auf 320px-iPhones). Touch-Override behaelt `min-height: 44px` (Tap-Target via Hoehe).
+
+9. **`.msg-toolbar` (Z. ~2238-2248)** `gap` 6 → 3 px halbiert — Action-Icons (Timestamp, Mülleimer, Copy, Edit) ruecken naeher zusammen. Touch-Targets via `.copy-btn` / `.bubble-action-btn` `min-width: 44px` / `min-height: 44px` bleiben — der visuelle Abstand wird kleiner, der Klickbereich ueberlappt jetzt leicht (UX-konform via Fitts' Law).
+
+10. **JS `renderSidebarProjects()` + `handleSidebarProjectTap(id)` (Z. ~6202-6260)** — neue Funktion rendert die kompakte Projekt-Liste in der Sidebar; nutzt `window.__nalaProjectsCache` (P-UI-5), `getPinnedProjectIds()`, `getActiveProjectId()`, `projectsSortMode` — bleibt automatisch synchron. Pinned zuerst, dann reguläre, beide mit demselben Sorter wie `renderProjectsView()`. Versteckt sich komplett wenn Cache leer ist (Liste display:none + Separator unten display:none). `handleSidebarProjectTap(id)` ruft `setActiveProject(found)` und schliesst die Sidebar via `toggleSidebar()` (analog `handleProjectTap` in P-UI-5).
+
+11. **JS-Hooks (Z. ~3680-3715, 6035, 6135-6155, 6155-6175)** — `setActiveProject` / `clearActiveProject` / `toggleProjectPin` / `setProjectsSortMode` / `loadNalaProjects` rufen jetzt zusaetzlich `renderSidebarProjects()` (mit `typeof === 'function'`-Guard, fail-quiet). `toggleSidebar()` ruft beim Open zusaetzlich `renderSidebarProjects()` (sofort aus Cache) UND `loadNalaProjects()` (Cache-Refresh im Hintergrund) — analog `loadMyPrompt()`-Pattern aus Patch 47.
+
+**Color-Picker (Punkt 6 der Spec):** alle 9 Farb-Eintraege im Settings-Modal (theme: `tc-primary`/`tc-mid`/`tc-gold`/`tc-text`/`tc-accent`; bubble: `bc-user-bg`/`bc-user-text`/`bc-llm-bg`/`bc-llm-text`) sind bereits `<input type="color">` — voller RGB-Bereich nativ (Mobile-System-Picker). Plus HSL-Slider als Ergaenzung (Patch 128). Kein zusaetzlicher Code noetig — `TestColorPickerVollRGB` zementiert den Status (mind. 9 type=color, alle 9 IDs sind color).
+
+**DESIGN.md Sektion 12.2 aktualisiert.** Neuer Sidebar-Aufbau (Aktions-Zeile mit Save, Projekte-Row eigene Zeile, Separators, Projekt-Liste, CHATS-Caption, Footer-Swap). **Aenderungshistorie** um vollstaendigen P-UI-Polish-2-Eintrag erweitert. Anti-Invarianten 1+2 unveraendert (P-UI-Polish-1 unangetastet).
+
+**Test-Aenderungen.**
+
+- `test_p_ui_4_sidebar_content_shift::test_sidebar_reihenfolge_oben_nach_unten` aktualisiert (UPDATED-Docstring): neue Reihenfolge mit `projekte_row` (sidebar-projekte-row), `projects_list` (sidebar-projects-list), `chats_heading` (sidebar-chats-heading) ersetzt alte `letzte_chats_h3`-Position. Plus Anti-Assert gegen `📋 Letzte Chats` (P-debt-10-Pattern).
+- `test_settings_umbau::test_schraubenschluessel_nicht_in_topbar` aktualisiert (UPDATED-Docstring): Anti-Assert dass kein `<button>` im Header `openExportMenu` ruft (Save-Button gewandert). Plus neuer `test_export_button_in_sidebar` (Positive-Assert: `.sidebar-save-btn` in sidebar mit `openExportMenu()`).
+- Neuer Test-File [`test_p_ui_polish_2_layout.py`](../zerberus/tests/test_p_ui_polish_2_layout.py) mit **66 Source-Audit-Tests** in 13 Klassen:
+  - **TestHeaderHoeheReduziert (4):** padding 7px Default + 5px Landscape + Anti-Assert 10px + font-size 1.05em bleibt.
+  - **TestSidebarAktionsZeile (4):** Neuer-Chat-Button in actions, Save-Button-Klasse + Label + onclick + id, Header-Anti-Assert (kein <button> mit openExportMenu im Header).
+  - **TestSidebarProjekteRow (4):** Klasse + id, display block + width 100%, Touch-Target 44px, nicht mehr in actions.
+  - **TestSidebarSeparatorenUndCaption (5):** sidebar-separator-Klasse mit rgba 0.06, mind. 2 hr-Elemente im Sidebar-HTML, sidebar-chats-heading mit "CHATS"-Text, font-size 11 + uppercase + letter-spacing, alter `📋 Letzte Chats`-h3 weg.
+  - **TestSidebarProjektListe (4):** Container, list-style none, Item-CSS (cursor pointer + border-left + 13px), .pinned und .active States.
+  - **TestSidebarFooterSwap (1):** openSettingsModal vor doLogout im Footer-DOM (Settings links, Logout rechts).
+  - **TestChatMessagesScrollNavPadding (3):** 32px im chat-messages-Block, kein einsames `padding: 20px;` mehr, gap 18px (P-UI-Polish-1) bleibt.
+  - **TestSentimentTriptychEinzeilig (4):** flex + row + nowrap explizit, sent-chip min-width 36, kein min-width 44 im Default-Block, flex-shrink 0.
+  - **TestMsgToolbarGapHalbiert (3):** gap 3px, kein gap 6px mehr, copy-btn/bubble-action-btn 44x44 Touch-Target.
+  - **TestColorPickerVollRGB (2):** mindestens 9 `<input type="color">` im Source, alle 9 konkreten IDs sind type=color.
+  - **TestSidebarProjektListeJS (11):** renderSidebarProjects existiert + nutzt Cache + versteckt sich bei leerer Liste + pinned-zuerst + nutzt projectsSortMode, handleSidebarProjectTap existiert + ruft setActiveProject + schliesst Sidebar, toggleSidebar hookt sowohl renderSidebarProjects als auch loadNalaProjects, setActiveProject + clearActiveProject + toggleProjectPin + setProjectsSortMode + loadNalaProjects rufen alle renderSidebarProjects.
+  - **TestPhase5cMechanikIntakt (16):** P-UI-1 (max-width 100% + align-self stretch user/bot), P-UI-2 (collapsed-v2 + pui2_shouldCollapse), P-UI-3 (text-input 44px + focus 33dvh), P-UI-4 (body.pui4-sidebar-open shifts container), P-UI-5 (#projects-screen + openProjectsView/closeProjectsView), P-UI-6 (.pui6-reasoning-block), P-UI-7 (.pui7-llm-icon), P-UI-8 (.pui8-scroll-nav + left: 6px), P-UI-10 (.pui10-ambient-layer + body.pui10-ambient-stage-2 .message[class] Override), P-UI-11 (passthrough — keine direkten nala.py-Marker), P-UI-Polish-1 (User-Bubble alpha 0.12, Bot-Bubble background transparent, session-item background transparent), Patch-183 _isBubbleBlack aktiv. **Defense-in-Depth gegen Refactor-Regression** — explizite Anti-Regress-Klasse zementiert die Mechanik-Trennung.
+  - **TestPUiPolish2InlineMarker (4):** Marker mehrfach (>=8), im CSS, im HTML, im JS.
+
+UI-relevante Test-Suite (19 Files: P-UI-1..11 + p_ui_polish_2 + p_ui_polish + nala_bubble_layout + nala_adapter + p203d3 + settings_umbau + dark_theme_contrast) **750/750 gruen lokal**. JS-Syntax-Integrity (test_p203d3 `TestJsSyntaxIntegrity` per `node --check`) gruen. Volle Unit-Suite-Erwartung: **3381 passed lokal** (P-UI-Polish-1-Baseline 3315 + 66 P-UI-Polish-2-Tests).
+
+**Lessons (2)**: (1) Polish-Patches duerfen STRUKTUR aendern wenn sie Bestands-API wiederverwenden — die Sidebar-Projekt-Liste ist neu (HTML + CSS + JS), aber sie nutzt 100% den P-UI-5-Cache + Sort-Mode + Pin-State, kein neuer Daten-Pfad. Der Test "Polish vs. Struktur" ist nicht "DOM-Aenderung", sondern "neuer Daten-Pfad". (2) Save-Button-Wanderung Header → Sidebar zeigt warum Anker-Tests Spec-Verschiebungen explizit dokumentieren muessen — alter `assert X in header` wird zu `assert X NICHT in <button> im Header` plus neuer `assert X in sidebar` (P-debt-10-Pattern verallgemeinert auf Wanderungen).
+
+---
+
 ## Patch P-UI-Polish (2026-05-09) — Phase-5c-Polish: Visuelles Fine-Tuning nach Mockup-Vorbild (KEINE strukturelle Aenderung)
 
 **Anlass.** Phase 5c ist mit P-UI-11 strukturell vollstaendig abgeschlossen — Collapse, Sidebar-Shift, Scroll-Nav, Reasoning-Block, LLM-Icon, Sentiment-Ambient, 2-Achsen-Skalierung, Projektseite, Reasoning-Mapping (UI-1..UI-11) alle ✅. Die **Mechanik** stimmt. Aber das **visuelle Gewicht** der Default-Werte (Bot-Bubble mit `rgba(26,47,78,0.85)` Background + `box-shadow: 0 3px 8px rgba(0,0,0,0.3)` + asymmetrischem 18/18/18/4-Tail-Radius, User-Bubble mit `rgba(236,64,122,0.88)` Background + Gold-Box-Shadow + 18/18/4/18-Tail) wirkt klobig im Vergleich zum cleanen Mockup [`docs/NalaMockup.jsx`](NalaMockup.jsx) — alle grossen Chat-UIs (ChatGPT, Claude, Mistral) zeigen LLM-Antworten ohne Bubble, mit dezentem User-Akzent. P-UI-Polish bringt den Look auf Mockup-Niveau — **OHNE strukturelle Aenderung**. Reine CSS-Wert-Aenderungen.
