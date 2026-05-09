@@ -8740,6 +8740,66 @@ Alle 14 lokal grün. Volle Unit-Suite-Erwartung: **2691 passed lokal erwartet** 
 
 ---
 
+## Patch P-UI-Polish (2026-05-09) — Phase-5c-Polish: Visuelles Fine-Tuning nach Mockup-Vorbild (KEINE strukturelle Aenderung)
+
+**Anlass.** Phase 5c ist mit P-UI-11 strukturell vollstaendig abgeschlossen — Collapse, Sidebar-Shift, Scroll-Nav, Reasoning-Block, LLM-Icon, Sentiment-Ambient, 2-Achsen-Skalierung, Projektseite, Reasoning-Mapping (UI-1..UI-11) alle ✅. Die **Mechanik** stimmt. Aber das **visuelle Gewicht** der Default-Werte (Bot-Bubble mit `rgba(26,47,78,0.85)` Background + `box-shadow: 0 3px 8px rgba(0,0,0,0.3)` + asymmetrischem 18/18/18/4-Tail-Radius, User-Bubble mit `rgba(236,64,122,0.88)` Background + Gold-Box-Shadow + 18/18/4/18-Tail) wirkt klobig im Vergleich zum cleanen Mockup [`docs/NalaMockup.jsx`](NalaMockup.jsx) — alle grossen Chat-UIs (ChatGPT, Claude, Mistral) zeigen LLM-Antworten ohne Bubble, mit dezentem User-Akzent. P-UI-Polish bringt den Look auf Mockup-Niveau — **OHNE strukturelle Aenderung**. Reine CSS-Wert-Aenderungen.
+
+**Spec-Vorgabe.** Die Spec (User-Eskalation in der Eroeffnungs-Message) hat sieben Detail-Aenderungen aufgelistet, alle mit konkreten Werten aus dem Mockup. Plus eine neue Anti-Invariante in DESIGN.md: "Bot-Nachrichten haben KEINEN Bubble-Hintergrund". Plus Hinweis: Phase-5c-Strukturelle-Mechanik bleibt unangetastet.
+
+**Aenderungen in [`zerberus/app/routers/nala.py`](../zerberus/app/routers/nala.py).**
+
+1. **`:root --bubble-user-bg`** (Z. ~133) von `rgba(236, 64, 122, 0.88)` auf `rgba(236, 64, 122, 0.12)` abgesenkt. Mockup-Wert. Comment-Block dokumentiert die Aenderung explizit ("P-UI-Polish: User-Bubble-Alpha drastisch reduziert (0.88 → 0.12)"). `--bubble-llm-bg` bleibt `rgba(26, 47, 78, 0.85)` — wird aber NUR noch fuer typing-indicator (Z. ~1862) und Color-Picker-Fallback genutzt; `.bot-message` overridet auf transparent.
+
+2. **`.bot-message` (Z. ~1066-1080)** komplett entbubblt: `background: transparent` (statt `var(--bubble-llm-bg)`), `border-radius: 0` (statt `18px 18px 18px 4px`), `box-shadow: none` (statt `0 3px 8px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)`), kompaktes `padding: 8px 16px` (statt `.message`-Default 13px 18px). Plus neu: **`.bot-message::before { display: none; }`** — der `.message::before`-Shine ist mit transparentem Background sinnlos, also explizit ausgeblendet. Plus neu: **`.message.bot-message.collapsed::after { display: none; }`** — der P124-Long-Message-Fade greift auf `--bubble-llm-bg` (Variable bleibt rgba!), das wuerde ein blauer Verlauf am unteren Bot-Bubble-Rand sein, hier explizit deaktiviert (Long-Message-Collapse-Mechanik bleibt erhalten — nur das visuelle Fade weg, "Mehr"-Button bleibt als Indikator). `align-self: stretch` bleibt (P-UI-1).
+
+3. **`.user-message` (Z. ~1059-1065)**: `border-radius: 10px` (gleichmaessig, Mockup) statt `18px 18px 4px 18px` (asymmetrischer Tail); neuer `border-left: 3px solid rgba(236, 64, 122, 0.5)` als visueller User-vs-LLM-Marker (ersetzt den asymmetrischen Tail); kompaktes `padding: 10px 14px` (Mockup) statt `.message`-Default 13/18; `box-shadow: none` (statt Gold + Dunkel-Shadow). `align-self: stretch` bleibt (P-UI-1). `background: var(--bubble-user-bg)` bleibt — die Variable hat jetzt den 0.12-Wert, also greift dezenter Akzent.
+
+4. **`.session-item` (Z. ~945-957)**: `background: transparent` statt `var(--color-primary)`; kompaktes `padding: 9px 12px` statt `12px`; `margin-bottom: 1px` statt `8px`; neue `font-size: 13px` (vorher Body-Default 15px ueber Vererbung); `border-radius: 7px` (statt 10); Hover-Bg dezent `rgba(255,255,255,0.06)` statt sattem `#0f1e38`. Mistral-Pattern: nur Text, clean, kein visueller Ballast. `border-left: 3px solid transparent` bleibt fuer Pinned-Hervorhebung. Comment dokumentiert die Mockup-Vorlage.
+
+5. **`.chat-messages` (Z. ~1005-1013)**: `gap: 18px` statt `12px`. Mehr Luft zwischen Nachrichten — Chat atmet. Comment dokumentiert die Aenderung.
+
+6. **`#text-input` (Z. ~1758-1789)**: dezenter `border: 1px solid rgba(255,255,255,0.08)` statt gold-`rgba(240,180,41,0.3)`; `background: rgba(255,255,255,0.03)` statt sattem `var(--color-primary)`; `border-radius: 10px` (Mockup) statt `20px` (zu rund). Inaktiv-Look ist jetzt unauffaellig — User merkt die Eingabe-Zeile, aber sie konkurriert nicht mit dem Chat-Inhalt.
+
+7. **`#text-input:focus` (Z. ~1778-1789)**: `border-color: rgba(201, 168, 76, 0.3)` (gold-Akzent dezent) statt voller `var(--color-gold)`-Saettigung; Box-Shadow `rgba(240,180,41,0.10)` statt `0.15`. Bei Fokus wird der Gold-Akzent ANGEDEUTET, nicht aufdringlich.
+
+8. **`.input-area` (Z. ~1734-1747)**: `background: rgba(13, 17, 23, 0.95)` (passt zum App-Hintergrund mit leichter Dimm-Optik) statt `var(--color-primary-mid)`; `border-top: 1px solid rgba(255,255,255,0.06)` statt `1px solid #2a4068`. Das gesamte Input-Footer-Element wirkt nicht mehr als eigener satter Streifen, sondern als dezenter Trenner zwischen Chat und Eingabe.
+
+**DESIGN.md Sektion 1.6 aktualisiert.** User-Bubble-Werte (rgba 0.12), Bot-Bubble-Override-Eintrag (transparent), neuer Border-Akzent-Eintrag (`border-left: 3px solid rgba(236, 64, 122, 0.5)`), Schatten-Beschreibung (Default `none`, P-UI-10 stapelt). Plus zwei klar getrennte Anti-Invarianten:
+- **Anti-Invariante 1 (Pre-P-UI-Polish):** Bubble-Backgrounds duerfen NIE `#000000` oder `transparent` als Default haben. Gilt **weiterhin** fuer User-Bubble und `--bubble-llm-bg`-Variable im `:root`-Block (typing-indicator + Color-Picker-Fallback brauchen einen lesbaren Wert). Patch-183-Sanitizer (`_isBubbleBlack()`) bleibt aktiv.
+- **Anti-Invariante 2 (NEU mit P-UI-Polish):** `.bot-message` hat KEINEN Bubble-Hintergrund — `background: transparent` ist die Spec.
+
+Beide Anti-Invarianten koexistieren durch getrennte Geltungsbereiche (`:root`-Variable vs. `.bot-message`-Override).
+
+**Tests.** Drei alte Tests in `test_p_ui_1_layout.py` (`test_user_bubble_box_shadow_bleibt`, `test_bot_bubble_box_shadow_bleibt`, `test_bubble_border_radius_tail_bleibt`) wurden ersetzt durch fuenf neue Tests, die die P-UI-Polish-Werte zementieren — mit WHY-Docstring (P-debt-10-Pattern) der die Spec-Verschiebung dokumentiert: `test_user_bubble_box_shadow_property_existiert` (Property bleibt fuer P-UI-10-Stage-Override, Default `none`), `test_bot_bubble_box_shadow_property_existiert` (analog), `test_bubble_border_radius_user_und_bot` (User=10px, Bot=0; Anti-Asserts gegen alte 18/18/4/18- und 18/18/18/4-Werte), `test_user_bubble_pink_border_left_marker` (neuer User-vs-LLM-Marker), `test_bot_bubble_transparent_background` (Anti-Invariante 2).
+
+Neuer Test-File [`zerberus/tests/test_p_ui_polish_visual_weight.py`](../zerberus/tests/test_p_ui_polish_visual_weight.py) mit **40 Source-Audit-Tests** in 6 Klassen:
+- **TestBotBubbleEntfernt (7):** background transparent, kein `var(--bubble-llm-bg)`, border-radius 0, box-shadow none, padding 8/16, Shine deaktiviert (`.bot-message::before display:none`), Long-Message-Fade deaktiviert (`.message.bot-message.collapsed::after display:none`).
+- **TestUserBubbleDezenter (7):** :root-Alpha 0.12, kein 0.88 mehr, border-radius 10px, kein asymmetrischer Tail, Pink-border-left mit `3px solid` und rgba(236,64,122,*), padding 10/14, box-shadow none.
+- **TestSessionItemSchlank (7):** background transparent, kein `var(--color-primary)` mehr, padding 9/12, margin-bottom 1px, font-size 13px, Hover rgba(255,255,255,0.06), kein `#0f1e38` mehr.
+- **TestAtmungUndInput (9):** chat-messages gap 18px, kein gap 12px mehr, text-input dezenter Border, kein gold-rgba(0.3) mehr, dezenter Background, border-radius 10px, focus dezenter Gold-Akzent, input-area dezenter Background, dezente Border-Top.
+- **TestPhase5cMechanikIntakt (8):** `.message max-width: 100%` (P-UI-1), `.user/bot-message align-self: stretch` (P-UI-1), `.pui6-reasoning-block` existiert, `.pui7-llm-icon` existiert, `.pui8-scroll-nav` existiert, `.pui10-ambient-layer` existiert, `body.pui10-ambient-stage-2 .message[class]` Override-Selektor existiert. **Defense-in-Depth gegen Refactor-Regression** — explizite Anti-Regress-Klasse zementiert die Mechanik-Trennung.
+- **TestPUiPolishInlineMarker (2):** "P-UI-Polish"-Tag im Source vorhanden, mindestens 5 Vorkommen in den geaenderten CSS-Bloecken.
+
+UI-relevante Test-Suite (18 Files: P-UI-1..11 + p_ui_polish + nala_bubble_layout + nala_adapter + p203d3 + settings_umbau + p212 + dark_theme_contrast) **723/723 gruen lokal**. JS-Syntax-Integrity (test_p203d3 `TestJsSyntaxIntegrity` per `node --check`) gruen — kein JS beruehrt. Volle Unit-Suite-Erwartung: **3315 passed lokal** (P-UI-11-Baseline 3270 + 40 P-UI-Polish-Tests + 5 Netto in test_p_ui_1_layout.py).
+
+**Lessons (3) in [`lessons.md`](../lessons.md).**
+1. **Visuelles Polish kann reine CSS-Wert-Aenderung sein, wenn die Mechanik durchdacht war** — Phase 5c hatte 11 strukturelle Schritte, P-UI-Polish hat NULL strukturelle. Anti-Regress-Klasse `TestPhase5cMechanikIntakt` zementiert die Mechanik-Trennung. Reine CSS-Polish-Patches haben einen viel kleineren Blast-Radius als strukturelle UI-Patches — aber genauso oft Angriffsziel von "verbesser mal eben"-Refactors.
+2. **Anti-Invariante 1 + Anti-Invariante 2 koexistieren wenn ihre Geltungsbereiche getrennt sind** — Pre-P-UI-Polish hatte "nie schwarz auf schwarz" (Anti-Invariante 1), P-UI-Polish fuehrt "Bot ohne Bubble" (Anti-Invariante 2) ein. Erster Reflex `--bubble-llm-bg: transparent` haette Anti-Invariante 1 gebrochen (Sanitizer erkennt `transparent` als Black-Bug). Loesung: Variable bleibt rgba(26,47,78,0.85), `.bot-message` overridet lokal auf transparent. Beide Anti-Invarianten gleichzeitig wahr.
+3. **Bei Test-Anker-Updates wegen Spec-Verschiebung: WHY-Docstring + alte Werte als `not in`-Anti-Asserts** — P-debt-10-Pattern verallgemeinert. Drei alte Tests in `test_p_ui_1_layout.py` mussten umgeschrieben werden, weil die Spec sich verschoben hat. WHY-Docstring dokumentiert: P-UI-1-Forderung war Tail + Shadow, P-UI-Polish hat das auf 10px-Radius + `box-shadow: none` verschoben. Plus alte Form als Anti-Assert (`assert "18px 18px 4px 18px" not in user_block`) macht den Test selbst-dokumentierend.
+
+**Bewusst NICHT angefasst in P-UI-Polish.**
+- **Phase-5c-Strukturelle-Mechanik:** P-UI-1 (Layout-Grundregel max-width 100% + align-self stretch), P-UI-2 (Collapse-System v2), P-UI-3 (Eingabefeld Expand), P-UI-4 (Sidebar Content-Shift), P-UI-5 (Projekt-View), P-UI-6 (Reasoning-Block), P-UI-7 (LLM-Icon), P-UI-8 (Scroll-Nav), P-UI-9 (2-Achsen-Skalierung), P-UI-10 (Sentiment-Ambient), P-UI-11 (Reasoning-Mapping) — alles unangetastet. Anti-Regress-Klasse `TestPhase5cMechanikIntakt` zementiert das.
+- **Backend.** Kein Backend-Pfad beruehrt — reine Frontend-CSS-Aenderung in `zerberus/app/routers/nala.py`-Style-Block.
+- **JS.** Keine JS-Aenderung. test_p203d3 `TestJsSyntaxIntegrity` (per `node --check`) gruen ohne Aenderung.
+- **typing-indicator (Z. ~1862).** Lasse `--bubble-llm-bg` weiter benutzen — bleibt visuell als kurze "tippt..."-Bubble erkennbar. Nicht in P-UI-Polish-Scope; Mockup zeigt keinen Typing-Indicator.
+- **Hel-UI.** Hel ist eine separate UI mit eigenem Styling, P-UI-Polish ist Nala-only. Hel-Splitscreen-Bug (HANDOVER-Schulden #9) bleibt offen.
+- **`thinking`-Parameter im LLMService (P-UI-11-pre-2).** Mapping enthaelt schon `thinking: True/False` als Hint, aber LLMService.call nutzt ihn nicht. Folge-Patch — nicht in P-UI-Polish-Scope.
+- **Phase 5b (BGE-Reranker fuer Huginn-RAG-Lookup).** Spec-Arbeit, braucht User-Input. Nicht in dieser Session.
+
+**Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN** — P-UI-Polish ist Cosmetic-Folge-Patch ausserhalb der Phase-Ziele.
+
+---
+
 ## Patch P-debt-10 (2026-05-09) — Mini-Wartungs-Patch: Test-Anker `test_mein_ton_nicht_mehr_in_sidebar` (Schulden #10 geschlossen)
 
 **Anlass.** Der Test [`zerberus/tests/test_settings_umbau.py`](../zerberus/tests/test_settings_umbau.py) `TestMeinTonInSettings::test_mein_ton_nicht_mehr_in_sidebar` lief seit P-UI-4 rot — drei Wochen lang als HANDOVER-Schulden #10 dokumentiert, aber als "niedriger Aufwand, ~10 Zeilen Test-Code" verschoben. Diese Session greift ihn als naturlicher Folgeschritt nach Phase-5c-Abschluss auf — nichts Neues mehr in Phase 5c, kein Phase-5b-Spec, also Schulden-Abbau als naechster sinnvoller Schritt.
