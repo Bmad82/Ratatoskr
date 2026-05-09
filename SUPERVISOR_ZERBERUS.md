@@ -1,6 +1,6 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-UI-10 (2026-05-09) — Phase 5c Schritt 10: Sentiment-Ambient-Lighting (sanfter Farbschimmer aus BERT+Prosodie-Konsens, Stufen 0–5 mit 15 % Opacity-Cap, 12 s Fade, abschaltbar). Phase 5a bleibt VOLLSTÄNDIG ABGESCHLOSSEN, Phase 5c läuft (UI-1 + UI-2 + UI-3 + UI-4 + UI-5 + UI-6 + UI-7 + UI-8 + UI-9 + UI-10 ✅, UI-11 pending).*
+*Letzte Aktualisierung: P-UI-11 (2026-05-09) — Phase 5c Schritt 11: Intent-Router → Reasoning-Mapping (Backend) — neues Modul `zerberus/core/reasoning_router.py` mit `REASONING_MAPPING`-Tabelle (deepseek/v3.2 → r1, mistral/large + thinking, claude/sonnet + thinking, llama → null), `compute_effort_score(message)` als 0..10-Heuristik, `select_reasoning_variant(...)` als Switch-Entscheidung (Default-Schwellwert 7, ENV-überschreibbar). Hook in `legacy.py` chat_completions vor dem if/else-Block, drei `llm_service.call`-Pfade bekommen `model_override=_pui11_model_override`. Pre-Call-Heuristik statt Two-Pass — kostenneutral, Spec-konform. UI-Feedback via P-UI-7-LLM-Icon. Phase 5a VOLLSTÄNDIG, Phase 5c VOLLSTÄNDIG (UI-1..11 ✅).*
 
 ---
 
@@ -13,6 +13,43 @@ Chris hat im Repo-Root einen Patch-Prompt [`NALA_UI_REDESIGN_PROMPT.md`](NALA_UI
 ---
 
 ## Aktueller Patch
+
+**P-UI-11** — Phase 5c Schritt 11: Intent-Router → Reasoning-Mapping (Backend) (2026-05-09)
+
+Elfter und FINALER Code-Patch der UI-Redesign-Phase. Phase 5c ist mit P-UI-11 vollstaendig abgeschlossen. Backend-Patch (kein Frontend-Code) — der Intent-Router schaltet bei hohem `effort_score` automatisch auf die Reasoning-Variante des aktuellen Standard-Modells um, ohne UI-Toggle. Spec NALA_UI_REDESIGN_PROMPT.md Sektion 12 + DESIGN.md 14.1 ("Automatisierung über manuelle Kontrolle") + 14.2 (UX-Tabelle).
+
+**Architektur: Mapping-Tabelle + Effort-Heuristik + Pre-Call-Switch + fail-quiet Hook + Source-Audit-Tests.**
+
+- **Neues Modul** [`zerberus/core/reasoning_router.py`](zerberus/core/reasoning_router.py) — separat von `intent_parser.py`, weil das Mapping (Modell → Reasoning-Variante) keine Kopplung zur Header-Parser-Logik hat. Modul-Doc dokumentiert die drei zentralen Architektur-Entscheidungen (Heuristik statt Two-Pass / Range 0..10 statt 1..5 / Whitelist-Stil).
+- **`REASONING_MAPPING`** als Modul-Konstante — Spec-Modelle alle drin: `deepseek/v3.2` → `{"model": "deepseek/deepseek-r1", "thinking": False}`, `mistralai/mistral-large` → `{"model": "mistralai/mistral-large", "thinking": True}`, `anthropic/claude-sonnet-4-5` → `{"model": "anthropic/claude-sonnet-4-5", "thinking": True}`, `meta-llama/llama-3.1-70b-instruct` → `None`. Plus Aliase (`deepseek/deepseek-chat`, `mistral/large`, `claude/sonnet`, `llama/3.1-70b`) damit Spec-Notation wie auch volle OpenRouter-IDs greifen. Lowercase-Keys, normalisiert via `_normalize_model_id`.
+- **`REASONING_THRESHOLD_DEFAULT = 7`** — Spec "effort_score > 7". ENV `NALA_REASONING_THRESHOLD` (Integer ≥ 0) ueberschreibt.
+- **Heuristik `compute_effort_score(message: str) -> int`** im 0..10-Range. Bewusst getrennt vom existing `effort` 1..5 in `intent_parser.ParsedResponse` (das kommt aus dem LLM-Output-Header und ist erst NACH dem ersten Call bekannt). Heuristik-Bestandteile: Wortzahl-Buckets (>=10 +1, >=25 +1, >=60 +1), High-Effort-Tokens (deutsche + englische Reasoning-Trigger wie `warum`/`step by step`/`begruende`/`analysiere`/`beweise`/`why`/`prove`/`derive`, gestaffelt: 1=+2, 2=+3, 3=+5, 4+=+6), Code-Marker (`\`\`\``/`def`/`class`/`{`/`->`/etc., +2 fuer ersten Match), Frage-Wort + `?` (+1), Negativ-Marker (`kurz`/`tldr`/`briefly`/`tl;dr`, -2). Endergebnis auf [0, 10] geclampt.
+- **`select_reasoning_variant(base_model, effort, *, threshold=, override_mapping=)`** entscheidet den Switch. Liefert `None` wenn effort ≤ threshold ODER base_model nicht in Mapping ODER Mapping-Eintrag explizit `None`. Sonst ein Dict-Kopie `{"model": "...", "thinking": bool}`. `override_mapping` ermoeglicht Tests + zukuenftigen `config.yaml`-Override unter `modules.reasoning.*` ohne Code-Change.
+- **`select_reasoning_for_message(base_model, message, ...)` Convenience-Wrapper** — kombiniert Score-Berechnung + Selection + INFO-Log bei Switch (`[P-UI-11] Reasoning-Switch effort=N base=X -> Y thinking=Z`).
+- **Hook in [`zerberus/app/routers/legacy.py`](zerberus/app/routers/legacy.py)** chat_completions vor dem `if _ORCH_PIPELINE_OK:`-Block (vor `messages_for_llm = [m.model_dump() for m in req.messages]`): `_pui11_model_override = None; try: _pui11_base_model = settings.legacy.models.cloud_model if settings.legacy else None; _pui11_score, _pui11_variant = select_reasoning_for_message(_pui11_base_model, last_user_msg); if _pui11_variant: _pui11_model_override = _pui11_variant.get("model"); except Exception as _pui11_err: logger.warning(f"[P-UI-11] Reasoning-Switch fail-quiet: {_pui11_err}")`. Drei bestehende `llm_service.call(messages_for_llm, session_id, ...)`-Aufrufe (Orchestrator-Pfad, Orchestrator-Fallback, no-Orchestrator-Fallback) bekommen `model_override=_pui11_model_override` durchgereicht. Bei `None` → kein Switch (LLMService faellt auf `cloud_model` zurueck via `model_override or settings.legacy.models.cloud_model`).
+- **Pre-Call statt Two-Pass.** Two-Pass (erst Standard-Call, dann ggf. Reasoning-Re-Call) verdoppelt Token-Kosten und Latenz. Pre-Call mit Heuristik ist weniger praezise als die LLM-Selbsteinschaetzung (`effort` 1..5 im Header), aber kostenneutral und Spec-konform ("Router switcht API-Call auf Reasoning-Variante" impliziert Pre-Switch). Dokumentiert im Modul-Docstring.
+- **UI-Feedback via P-UI-7-LLM-Icon.** Kein neuer Frontend-Code in P-UI-11. Der LLMService liefert in `data.model` automatisch das tatsaechlich verwendete Modell zurueck; P-UI-7 zeichnet dann das Icon entsprechend ("Show, don't tell", DESIGN.md 14.1). Bei Switch sieht der User: gleicher Bubble-Inhalt, anderes Icon — Modellwechsel ist sichtbar, aber nicht stoerend (kein Toast, kein Modal).
+- **Source-Audit-Tests** in [`zerberus/tests/test_p_ui_11_reasoning_mapping.py`](zerberus/tests/test_p_ui_11_reasoning_mapping.py): 71 Tests in 8 Klassen. `TestReasoningMapping` (8) prueft die Mapping-Tabelle: Spec-Modelle vorhanden, Lowercase-Keys, Llama explizit `None`, Threshold-Default 7. `TestEffortScoreHeuristic` (13) verifiziert Heuristik-Verhalten: leere/None Inputs → 0, Greeting → ≤2, Smalltalk-Frage → unter Threshold, lange Reasoning-Message → > Threshold, Code-Block-Erkennung, Wortzahl-Eskalation, kurz/tldr-Daempfung (Vergleichs-Test gegen Variante ohne Marker), Range-Clamp [0,10], Englisch (`why` zaehlt). `TestSelectReasoningVariant` (16) deckt alle Switch-Bedingungen ab: unter Threshold, genau am Threshold, ueber Threshold, unbekanntes Modell, explicit-None-Mapping, None/leeres base_model, Case-Normalisierung, Threshold-Override per Argument, ENV-Override, ENV-Invalid-Fallback, override_mapping (Custom + Block-Default), negative effort, Mutation-Schutz (returned dict ist Kopie). `TestSelectReasoningForMessage` (5) testet den Convenience-Wrapper. `TestLegacySourceWiring` (11) prueft den Hook in `legacy.py`: Import-Statement, Marker, Hook-Block-Existenz, `_pui11_model_override`-Variable, `select_reasoning_for_message`-Aufruf, `settings.legacy.models.cloud_model`-Zugriff, try/except, Reihenfolge VOR `messages_for_llm = ...`, drei Aufrufe mit `model_override=_pui11_model_override`, `logger.warning`-Fallback. `TestReasoningRouterSource` (9) prueft Modul-Exports + Marker. `TestKeinRegressZuVorgaengernPatches` (5) verifiziert dass P212-Maskierung weiterhin VOR dem ersten LLM-Call steht, `temperature_override` und `session_id` in allen drei Aufrufen bleiben, P-UI-10 + P-UI-7 unangetastet sind. `TestPUiElevenInlineMarker` (4) verlangt `P-UI-11` mehrfach im Source. 71/71 lokal gruen. 671 UI-relevante Tests gruen (P-UI-1..11 + settings_umbau + nala_bubble_layout + nala_adapter + p203d3 + p212). Test_p203d3 `TestJsSyntaxIntegrity` (node --check) gruen — kein JS beruehrt.
+
+**Was P-UI-11 bewusst NICHT macht:**
+
+- **Two-Pass-Reasoning-Approach.** Erst Standard-Call → bei `effort >= 4` im LLM-Output-Header → Re-Call mit Reasoning-Variante. Verdoppelt Token-Kosten + Latenz. Alternative wenn Heuristik zu unpraezise ist — Folge-Patch.
+- **`thinking`-Parameter im LLMService.** Das Mapping enthaelt `thinking: True/False` als Hint — der LLMService nutzt den Hint aktuell NICHT (`call(...)` hat keinen `thinking`-Parameter). Modell-Switch greift trotzdem (deepseek/v3.2 → deepseek/r1 ist ein anderes Modell). Mistral/Claude switchen aktuell auf das gleiche Modell zurueck — der Hint wird im Folge-Patch verwendet wenn der LLMService eine `extra_body={"thinking": {...}}`-Pass-Through-Property bekommt.
+- **Per-User-Threshold-Override.** Aktuell global via ENV. Wenn Chris einen Profil-Slider will, ist das ein Folge-Patch in `ProfileConfig`.
+- **Konfigurierbares Mapping in config.yaml.** `override_mapping`-Argument ist da, aber kein YAML-Loader. Spec sagt "in Hel konfigurierbar" — falls UI-Editor in Hel kommen soll, ist das ein eigener Patch (Hel-Page-Edit, Endpoint, Validation). Default-Mapping deckt die Spec-Modelle ab.
+- **Telemetrie / Cost-Tracking pro Switch.** Der INFO-Log gibt einen Audit-Trail, aber keine Aggregation in DB. Wenn Chris wissen will, wie oft pro Tag geswitcht wird, ist das ein Folge-Patch (Counter in `cost`-Tabelle oder eigene Tabelle).
+- **Hel-Splitscreen-Bug** (Schulden #9, eigener Folge-Patch).
+- **`test_settings_umbau::test_mein_ton_nicht_mehr_in_sidebar`-Fix** (Schulden #10, eigener Mini-Fix-Patch).
+
+**Drei neue Lessons in [`lessons.md`](lessons.md):**
+
+1. **Pre-Call-Heuristik vs Two-Pass-Reasoning-Switch** — bei Routing-Entscheidungen, die einen LLM-Call beeinflussen, ist eine Pre-Call-Heuristik (basierend auf User-Input-Analyse) der pragmatische Default. Two-Pass (erst Standard-Call, dann konditionaler Re-Call) verdoppelt Token-Kosten und Latenz und ist nur dann sinnvoll, wenn die Pre-Call-Heuristik beweisbar zu unpraezise ist (Messung erforderlich).
+2. **0..10-Heuristik-Range entkoppelt vom 1..5-Header-Feld** — wenn ein neuer Score eingefuehrt wird, der semantisch zu einem existing Score "gehoert" aber technisch entkoppelt ist (verschiedene Datenquellen, verschiedene Berechnungs-Zeitpunkte), getrennte Range vermeidet Verwirrung. Spec-Vorgabe `> 7` plus existing Range 1..5 ist NICHT "Spec-Bug" — es sind zwei verschiedene Score-Welten.
+3. **Whitelist-Mapping mit explicit-None-Eintraegen** — wenn ein Mapping zwischen zwei Welten Sicherheit verlangt (z. B. "Standard-Modell ↦ Reasoning-Variante darf NUR bei explizit erlaubten Modellen schalten"), drei-Fall-Whitelist statt Default-Allow: (a) Eintrag mit Variante → Switch, (b) explicit-None-Eintrag → kein Switch, kein Fehler, (c) kein Eintrag → kein Switch, kein Fehler. (b) und (c) sehen aus Caller-Sicht identisch aus, aber (b) ist Doku ("dieses Modell habe ich bewusst geprueft, hat keine Reasoning-Variante"), (c) ist Default ("dieses Modell kenne ich nicht, ich switche nicht"). Beides sicher.
+
+---
+
+## Vorletzter Patch
 
 **P-UI-10** — Phase 5c Schritt 10: Sentiment-Ambient-Lighting (2026-05-09)
 
@@ -65,7 +102,7 @@ Zehnter Code-Patch der UI-Redesign-Phase. Sanfter Farbschimmer der gesamten Chat
 
 ---
 
-## Vorletzter Patch (Referenz)
+## Vorheriger Patch (Referenz)
 
 **P-UI-9** — Phase 5c Schritt 9: 2-Achsen-Skalierung (UI-Scale + Schriftgröße als Stepper) (2026-05-08)
 
@@ -117,7 +154,7 @@ Neunter Code-Patch der UI-Redesign-Phase. Ersetzt den 1-Achsen-UI-Slider (Patch 
 
 ---
 
-## Vorheriger Patch (Referenz)
+## Vorvorheriger Patch (Referenz)
 
 **P-UI-8** — Phase 5c Schritt 8: Scroll-Navigationsleiste (Gabelungs-Design) (2026-05-08)
 
@@ -161,7 +198,7 @@ Achter Code-Patch der UI-Redesign-Phase. Vertikaler Strich am linken Bildschirmr
 
 ---
 
-## Vorvorheriger Patch (Referenz)
+## Vorvorvorheriger Patch (Referenz)
 
 **P-UI-7** — Phase 5c Schritt 7: LLM-Icon-Anzeige (2026-05-08)
 
@@ -206,7 +243,7 @@ Siebter Code-Patch der UI-Redesign-Phase. Jede LLM-Antwort bekommt ein kleines I
 
 ---
 
-## Vorvorvorheriger Patch (Referenz)
+## Aeltere Patches (Referenz)
 
 **P-UI-6** — Phase 5c Schritt 6: Reasoning-Block-Styling (2026-05-08)
 
