@@ -371,6 +371,15 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 - **Session-Start: NICHT fragen "was soll ich machen" (P219-pre — Prozess-Regel)** — die HANDOVER-Empfehlung am Ende des "Nächster Schritt"-Abschnitts ist der Default. Coda lädt HANDOVER.md, liest die Empfehlung, legt los. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird davon abgewichen. Die Antwort "Was möchtest du — A, B oder C?" ist hier verboten — Chris will Ergebnisse sehen, nicht Rückfragen beantworten. Verweis: das ist die Marathon-Variante der allgemeinen FR-AUTONOME-PRIORITÄT-Regel oben.
 - **HANDOVER-Formulierung am Session-Ende auch autonom (P219-pre)** — Statt "Was soll ich machen — A, B oder C?" als Schlussfrage schreibt Coda eine Empfehlung in der Form "Nächste Session startet mit X (Begründung — z.B. niedrigster Aufwand / direkte Schulden-Folgekarte / User-Bug-Report). Falls Chris was anderes will, überschreibt er die Eröffnungs-Message." Die nächste Coda-Instanz kann dann ohne Rückfrage loslegen. Nur Architektur-Entscheidungen mit echtem Risiko bleiben als Frage stehen (in DECISIONS_PENDING).
 
+## HANDOVER "Nächster Schritt" — Autonomie-Regel (verschärft)
+- GENAU EIN Default als Feststellung, KEINE Optionsliste|"Nächster Schritt ist X (Begründung)." — Punkt.
+- Alternativen die Chris entscheiden muss → DECISIONS_PENDING (NUR bei echtem Architektur-Risiko)
+- Informationelle Erwähnungen ("Schulden #3 und #4 sind auch noch offen") sind OK als Kontext — aber NICHT als "oder stattdessen..." formulieren
+- Coda liest HANDOVER → nimmt den Default → legt los. KEINE Rückfrage.
+- EINZIGE Ausnahme: Chris schreibt in der Eröffnungs-Message explizit eine andere Aufgabe rein
+- Umkehr-Exklusiv: Coda entscheidet IMMER selbst, AUSSER der User hat eine explizite Priorität gesetzt. Nicht andersrum.
+- Anlass: Trotz P219-pre-Regel hat Coda mehrfach "Was soll ich machen?" gefragt — weil die HANDOVER Optionslisten enthielt die als Aufforderung gelesen wurden
+
 ## Pflicht nach jedem Patch
 - SUPERVISOR_ZERBERUS.md aktualisieren: Nummer|Datum|3-5 Zeilen Inhalt
 - Offene Items: erledigte raus|neue rein
@@ -379,6 +388,14 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 - PROJEKTDOKUMENTATION.md = vollständiges Archiv, nur bei Bedarf konsultiert
 - Vollständige Doku: `docs/PROJEKTDOKUMENTATION.md`
 - [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur-Änderungen aktualisieren|hängt am Projektstand|wenn SUPERVISOR aktualisiert wird, wird diese Datei AUCH aktualisiert|Inhalt = aktueller Zustand (KEINE Patch-Historie)|natürliche Sprache für RAG-Chunking|Spiegel-Kopie [`docs/RAG Testdokumente/huginn_kennt_zerberus.md`](docs/RAG%20Testdokumente/huginn_kennt_zerberus.md) parallel mitziehen|nach Update Chris-Upload via `curl -u Chris:... -F file=@docs/huginn_kennt_zerberus.md -F category=system http://localhost:5000/hel/admin/rag/upload`|`category=system` ist Pflicht (P178-Filter)
+
+## Deliverable-Smoke (Pflicht)
+- Kein Deliverable ohne funktionalen Smoke|HTML/JSON/Script → Datei öffnen/parsen/Ergebnis prüfen VOR Patch-Abschluss
+- "Syntax valide" ≠ Smoke — Smoke = "verhält sich wie erwartet wenn User es öffnet"
+- HTML mit eingebettetem JSON → JSON extrahieren + parsen + Items zählen + prüfen dass >0
+- Script das Output erzeugt → Output existiert + ist nicht leer + hat erwartete Struktur
+- Fehlende Smoke = Patch NICHT abgeschlossen
+- Anlass: Feature-Audit-HTML (Post-P-debt-12) hatte valides JS aber kaputtes inline-JSON — User sah leere Seite, hätte 10 Sekunden Smoke-Test gekostet
 
 ## Auto-Test-Policy (P165, verschaerft P213-pre-6)
 - GRUNDSATZ: Alles was Coda testen kann → Coda testet|Mensch nur für Untestbares
