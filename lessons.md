@@ -3,6 +3,13 @@
 
 Universelle Erkenntnisse: https://github.com/Bmad82/Claude/lessons/
 
+## Eskalation statt Endlos-Workaround (P-start-stable)
+- Wenn ein Test physische Ressourcen braucht die Coda nicht hat (SSL-Certs, laufender Server mit echtem Dateisystem, Browser, Hardware) → ESKALIEREN, nicht Workaround bauen|"Das ist ein manueller Test für Chris" ist eine gültige Antwort
+- Indikator: wenn der Smoke-Test-Aufbau komplexer wird als der eigentliche Patch → STOPP, Eskalation prüfen
+- Anti-Pattern: 55 Minuten PowerShell-Smoke-Runner für eine 3-Flag-Änderung an einer Batch-Datei|drei uvicorn-Zombie-Prozesse, WatchFiles-Timing-Probleme, UTF-8-BOM-Encoding-Quirks — alles Symptome von "teste etwas das du nicht testen kannst"
+- Faustregel: Coda kann testen was deterministisch + isoliert läuft (Unit-Tests, Source-Audit, JSON-Parse, node --check)|Coda kann NICHT sinnvoll testen was externe State braucht (laufender Server, SSL, Browser-Rendering, File-Watcher mit echtem FS)
+- Kein Deliverable-Smoke-Verstoß: die Smoke-Regel gilt für Dateien die der User ÖFFNET (HTML, JSON, Script-Output) — nicht für Batch-Dateien deren Funktion nur im Live-System verifizierbar ist
+
 ## Test-zementierte Doku-Anker muessen Doku-Refactors ueberleben (P-debt-12)
 - **DESIGN.md hatte seit P-UI-meta (2026-05-07) zwei verlorene Anker (`Leitregel`, `projektübergreifend`, `shared-design.css`) durch komplette Datei-Neufassung.** Der Test `test_design_system::test_design_md_enthaelt_regel` aus Patch 151 zementierte diese drei Strings als Spec, der Doku-Refactor hat sie versehentlich rausgeschnitten — Test rot, drei Wochen unbemerkt. Anker waren urspruenglich in einer expliziten `## Leitregel`-Sektion mit Inhalt; der Refactor hat die Sektion gestrichen, aber den Test-Anker nicht migriert.
 - **Loesung P-debt-12: kompakter Leitregel-Block direkt nach der Einleitung wieder eingefuegt.** Der Block ist die ehrliche Re-Interpretation der ursprunglichen Spec aus Patch 151 (L-001) und enthaelt alle drei Anker organisch im Inhalt: `**projektübergreifend**` als Adverb, `Leitregel` als Sektions-Headline, `shared-design.css` als Pfad-Verweis im Token-Verteilungs-Hinweis. Keine kuenstliche Marker-Wand, sondern echte Spec.
