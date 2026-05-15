@@ -1,10 +1,52 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 *Strategischer Stand für die Supervisor-Instanz (claude.ai Chat)*
-*Letzte Aktualisierung: P-debt-14 (2026-05-10) — Test-Fix fuer `test_fenrir_mega_patch.py::TestPacemakerStress::test_f_pace_01_master_toggle_stable` (Schulden #3 GELOEST, Test-only). Test skipte konsistent seit Patch 99 (H-F01), weil das Hel-UI-Akkordeon durch eine Tab-Leiste ersetzt wurde und `.hel-section[data-tab='sysctl']:not(.active)` `display: none` ist. Fix: `activateTab('sysctl')`-Click VOR dem Master-Toggle-Click, analog zum gruen laufenden `test_f_pace_02`. Davor: P-debt-13 (2026-05-10) — Stand-Anker-Regex `extract_current_patch` in `tools/sync_huginn_rag.py` um Buchstaben-Suffix-Patches erweitert (Schulden #12 GELOEST, ein-Zeilen-Wartungs-Patch). Regex `(P\d{3,4})\b` matchte vorher keine `P-UI-*`/`P-debt-*`/`P-feature-audit-*`-Patches — drei `TestDocSourceAudit`-Tests blieben seit dem ersten P-UI-*-Stand-Anker (2026-05-09 nach P-UI-Hel-Split) rot. Fix: Regex auf `(P[\w-]+)` erweitert + `extract_current_patch` upper-cased nur das fuehrende `P` (Original-Case-Praeservierung fuer Integration-Lookups). Plus 12 neue Source-Audit-Tests in `test_p210_huginn_rag_sync.py`. **Schulden #12 GELOEST.** Davor: P-feature-audit-mt (2026-05-10, Manuelle-Tests-Tab in `feature_audit_checklist.html`), P-start-stable (2026-05-10, Reload+Force-Shutdown in `start_stable.bat`), P-feature-audit (2026-05-10, Initialwurf `scripts/feature_audit.py`), P-debt-12 (2026-05-10, Leitregel-Anker in DESIGN.md, Schulden #11 GELOEST), Schulden #9 (Hel-Splitscreen) GELOEST nach Chris' visueller Verifikation am 2026-05-10. 92/92 in `test_p210_huginn_rag_sync.py` gruen, 121/121 in der huginn-doc/design-system-Smoke-Suite gruen, 4 pre-existing Worktree-Drift-Failures wegen `faiss`-Modul (Schulden #6, im Hauptrepo gruen). Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN. Letzter UI-Bugfix-Patch P-UI-Hel-Split. Letzter Backend-Bugfix-Patch P217. Letzter Code-Patch mit UI-Mechanik P-UI-11.*
+*Letzte Aktualisierung: P-mjolnir-workflow (2026-05-15) — Doku-only Workflow-Patch: `ZERBERUS_MARATHON_WORKFLOW.md` um drei Mjoelnir-Konventionen erweitert. Mjoelnir (Hammerfall) ist das Remote-Control-Panel fuer Coda-Sessions — kann per Knopfdruck Sessions starten, Feature-Requests einreichen, Session-Zusammenfassungen abrufen. Drei Aenderungen ohne Code-Pfad: (1) Session-Zyklus von 8 auf 12 Schritte erweitert — Schritt 0 prueft `FEATURE_REQUEST_ZERBERUS.md`-Existenz (Vorrang vor allem), Schritt 1 liest `mjolnir.md` aus Vorgaenger-Session ein (danach loeschen), Schritt 9 schreibt `mjolnir.md` (5-10 Zeilen Session-Zusammenfassung fuer den ZUSAMMENFASSUNG-Button), Schritt 10 benennt erledigten Feature-Request um zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md`. Plus Standard-Mjoelnir-Prompt zitiert als Block-Quote. (2) Doku-Pflicht-Tabelle um zwei Zeilen erweitert (mjolnir.md + FEATURE_REQUEST_ZERBERUS.md mit Format-/Umbenennungs-Regeln). (3) Neue Sektion „Mjoelnir-Konventionen" zwischen „Stopp-Regeln" und „Doku-Pflicht" — drei Sub-Abschnitte: mjolnir.md (Session-Zusammenfassung), FEATURE_REQUEST_ZERBERUS.md (priorisierter Arbeitsauftrag), und Rationale fuer separate Dateien statt MARATHON_WORKFLOW.md zu editieren (Feature-Requests kommen via Mjoelnir-API ohne manuelles Editieren). Akzeptanzkriterien: alter Prompt „Lies HANDOVER.md und ZERBERUS_MARATHON_WORKFLOW.md. Mach weiter." funktioniert weiterhin — die Feature-Request-Pruefung ist im Session-Zyklus verankert (Schritt 0), nicht prompt-abhaengig. Keine anderen Dateien beruehrt, keine Code-Aenderung, kein neuer Test, kein Server-Restart noetig. Davor: P-debt-14 (2026-05-10) — Test-Fix fuer `test_fenrir_mega_patch.py::TestPacemakerStress::test_f_pace_01_master_toggle_stable` (Schulden #3 GELOEST, Test-only). Test skipte konsistent seit Patch 99 (H-F01), weil das Hel-UI-Akkordeon durch eine Tab-Leiste ersetzt wurde und `.hel-section[data-tab='sysctl']:not(.active)` `display: none` ist. Fix: `activateTab('sysctl')`-Click VOR dem Master-Toggle-Click, analog zum gruen laufenden `test_f_pace_02`. Davor: P-debt-13 (2026-05-10) — Stand-Anker-Regex `extract_current_patch` in `tools/sync_huginn_rag.py` um Buchstaben-Suffix-Patches erweitert (Schulden #12 GELOEST, ein-Zeilen-Wartungs-Patch). Regex `(P\d{3,4})\b` matchte vorher keine `P-UI-*`/`P-debt-*`/`P-feature-audit-*`-Patches — drei `TestDocSourceAudit`-Tests blieben seit dem ersten P-UI-*-Stand-Anker (2026-05-09 nach P-UI-Hel-Split) rot. Fix: Regex auf `(P[\w-]+)` erweitert + `extract_current_patch` upper-cased nur das fuehrende `P` (Original-Case-Praeservierung fuer Integration-Lookups). Plus 12 neue Source-Audit-Tests in `test_p210_huginn_rag_sync.py`. **Schulden #12 GELOEST.** Davor: P-feature-audit-mt (2026-05-10, Manuelle-Tests-Tab in `feature_audit_checklist.html`), P-start-stable (2026-05-10, Reload+Force-Shutdown in `start_stable.bat`), P-feature-audit (2026-05-10, Initialwurf `scripts/feature_audit.py`), P-debt-12 (2026-05-10, Leitregel-Anker in DESIGN.md, Schulden #11 GELOEST), Schulden #9 (Hel-Splitscreen) GELOEST nach Chris' visueller Verifikation am 2026-05-10. 92/92 in `test_p210_huginn_rag_sync.py` gruen, 121/121 in der huginn-doc/design-system-Smoke-Suite gruen, 4 pre-existing Worktree-Drift-Failures wegen `faiss`-Modul (Schulden #6, im Hauptrepo gruen). Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN. Letzter UI-Bugfix-Patch P-UI-Hel-Split. Letzter Backend-Bugfix-Patch P217. Letzter Code-Patch mit UI-Mechanik P-UI-11.*
 
 ---
 
-## Letzter Maintenance-Patch (Test, Fenrir-Test-Fix)
+## Letzter Workflow-Patch (Doku-only, Mjoelnir-Integration)
+
+**P-mjolnir-workflow** — Mjoelnir-Konventionen in `ZERBERUS_MARATHON_WORKFLOW.md` verankert (2026-05-15)
+
+Doku-only Workflow-Erweiterung — keine Code-Aenderung, keine neuen Tests, kein Server-Restart noetig. Vorbereitung fuer Mjoelnir (Hammerfall) als Remote-Control-Panel fuer Coda-Sessions: Mjoelnir kann per Knopfdruck Coda-Sessions starten, Feature-Requests einreichen, Session-Zusammenfassungen abrufen. Damit das funktioniert, muss der Marathon-Workflow drei Dateikonventionen kennen — die werden in dieser Session in `ZERBERUS_MARATHON_WORKFLOW.md` verankert. Mjoelnir selbst lebt in einem anderen Repo (Hammerfall) und ist nicht Teil dieser Aenderung.
+
+**Aenderung 1 — Session-Zyklus von 8 auf 12 Schritte erweitert.** Neue Schritte 0+1 am Anfang, neue Schritte 9+10 vor dem Push:
+
+- Schritt 0: `FEATURE_REQUEST_ZERBERUS.md` pruefen → wenn vorhanden, einlesen und als Prioritaet abarbeiten (Vorrang vor allem in der Aufgabenliste).
+- Schritt 1: `mjolnir.md` pruefen → wenn vorhanden, einlesen (Zusammenfassung der Vorgaenger-Session), danach loeschen.
+- Schritt 9: `mjolnir.md` schreiben (5-10 Zeilen Session-Zusammenfassung fuer Mjoelnirs ZUSAMMENFASSUNG-Button).
+- Schritt 10: Wenn ein Feature-Request abgearbeitet wurde → umbenennen zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` (bleibt liegen bis Chris sie loescht).
+
+Plus zitierter Standard-Mjoelnir-Prompt als Block-Quote unter dem Zyklus: „Wenn eine FEATURE_REQUEST_ZERBERUS.md existiert, lies sie zuerst und arbeite sie als Prioritaet ab. Benenne die Datei nach Abarbeitung um zu FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md. Dann lies HANDOVER.md und ZERBERUS_MARATHON_WORKFLOW.md. Mach weiter."
+
+**Aenderung 2 — Doku-Pflicht-Tabelle um zwei Zeilen erweitert** (nach HANDOVER.md, vor „Diese Datei"):
+
+- `mjolnir.md` | Kompakt | Session-Zusammenfassung 5-10 Zeilen. Wird beim naechsten Session-Start eingelesen und geloescht.
+- `FEATURE_REQUEST_ZERBERUS.md` | — | Wenn vorhanden: als Prioritaet abarbeiten. Nach Abarbeitung umbenennen zu `_ERLEDIGT`-Form.
+
+**Aenderung 3 — Neue Sektion „Mjoelnir-Konventionen"** zwischen „Stopp-Regeln" und „Doku-Pflicht". Drei Sub-Abschnitte:
+
+- mjolnir.md (Session-Zusammenfassung) — Schreib-Pflicht am Session-Ende, Lese-+-Loesch-Pflicht am Session-Start, fail-tolerant wenn Datei nicht existiert.
+- FEATURE_REQUEST_ZERBERUS.md (priorisierter Arbeitsauftrag) — Vorrang vor allem, allererster Pruef-Schritt beim Session-Start, Umbenennung nach Abarbeitung.
+- Rationale: warum separate Dateien statt MARATHON_WORKFLOW.md zu editieren — Feature-Requests kommen oft von unterwegs ueber Mjoelnirs API-Endpoint, das muss ohne manuelles Editieren funktionieren.
+
+**Akzeptanzkriterien-Check (alle 6 erfuellt).**
+1. Session-Zyklus startet mit Schritt 0 (Feature-Request) und Schritt 1 (mjolnir.md) ✅
+2. mjolnir.md steht in der Doku-Pflicht-Tabelle ✅
+3. FEATURE_REQUEST_ZERBERUS.md steht in der Doku-Pflicht-Tabelle ✅
+4. Neue Sektion „Mjoelnir-Konventionen" erklaert beide Mechanismen ✅
+5. Chris' bisheriger Prompt „Lies HANDOVER.md und ZERBERUS_MARATHON_WORKFLOW.md. Mach weiter." funktioniert weiterhin — Schritt 0 ist im Zyklus verankert, nicht prompt-abhaengig ✅
+6. Keine anderen Dateien beruehrt — reiner Doku-Patch in MARATHON_WORKFLOW.md (die Session-Doku-Pflege selbst bringt natuerlich Aenderungen in SUPERVISOR/PROJEKTDOKU/huginn-doc/README/HANDOVER/mjolnir.md, aber nicht in CLAUDE_ZERBERUS.md, nicht in Code) ✅
+
+**Was P-mjolnir-workflow NICHT macht.** Keine Code-Aenderung. Keine neuen API-Endpoints. Keine Aenderung an CLAUDE_ZERBERUS.md (das kommt separat, wenn die Konvention validiert ist). Keine Aenderung an Mjoelnir/Hammerfall selbst (anderes Repo). Kein neuer Test (Workflow-Doku ist nicht test-zementiert — wenn die Konvention sich in der Praxis nicht bewaehrt, ist eine ein-Patch-Aenderung am MARATHON_WORKFLOW genug).
+
+**Status-Updates parallel.** `docs/huginn_kennt_zerberus.md` + Spiegel auf P-mjolnir-workflow gebumpt (Stand-Anker + FAQ — „Mjoelnir" jetzt als Begriff in der Doku, damit Huginn ihn bei Stand-Fragen kennt). `docs/PROJEKTDOKUMENTATION.md` mit vollstaendigem Patch-Eintrag (Workflow-Sektion). `README.md` Footer-Eintrag. `HANDOVER.md` neu geschrieben. `mjolnir.md` mit Session-Zusammenfassung erstellt. `lessons.md` um Lesson „Remote-Control via Datei-Konventionen statt API" erweitert.
+
+**Lesson.** Remote-Control eines lokalen Agent-Workflows klappt am robustesten ueber Dateikonventionen im Repo-Root statt ueber API-Endpoints im Agent. Der Agent prueft Dateien wenn er ohnehin Doku liest; der Steuer-Client legt Dateien via beliebigem Pfad (Mjoelnir-API, manuelles Editieren, `gh` Push) ab. Vorteil: keine neuen Endpoints, kein Auth-Mechanismus zu pflegen, Konvention ist git-versioniert und damit auditierbar. Backstop: die Konvention muss im allerersten Schritt des Session-Zyklus verankert sein (nicht prompt-abhaengig), sonst kann ein Standard-Prompt sie nicht aktivieren.
+
+---
+
+## Davor (Maintenance, Fenrir-Test-Fix)
 
 **P-debt-14** — Test-Fix fuer `test_fenrir_mega_patch.py::TestPacemakerStress::test_f_pace_01_master_toggle_stable`, Schulden #3 (2026-05-10)
 

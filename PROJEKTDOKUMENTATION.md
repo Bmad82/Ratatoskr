@@ -9547,3 +9547,54 @@ Der Block traegt alle drei Test-Anker organisch im Inhalt: `Leitregel` als Sekti
 
 *Stand: 2026-05-09, Patch P-UI-Hel-Split — Defensive CSS-Hardening fuer Hel-UI im Splitscreen-Modus (Schulden #9). Vier Klassen Edits in `zerberus/app/routers/hel.py` Style-Block: html-Layer-Hardening (overflow-x: hidden, min-height: 100%, box-sizing: border-box), body-Hardening (overflow-x: hidden, min-height: 100vh), container-Hardening (width: 100%), neuer @media (max-width: 900px)-Breakpoint mit Grid-Stacking via Attribute-Selectors (`[style*="grid-template-columns:1fr 1fr 1fr"]` vor `[style*="grid-template-columns:1fr 1fr"]` wegen Substring-Match-Falle), Tab-Nav-Margin-Korrektur (-12px statt -20px), Padding-Reduktion (12/14/14px), `.container > * { min-width: 0 }`, `#messagesTable td { max-width: clamp(120px, 32vw, 200px) }`. KEIN Refactor der Inline-Style-Grids. Neuer Test-File `test_p_ui_hel_split.py` mit 36 Source-Audit-Tests in 12 Klassen — 36/36 lokal gruen. UI-relevante Test-Suite (10 Hel-Files + 7 P-UI-Files): 286/286 gruen, 1 pre-existing Failure in test_design_system (NICHT durch P-UI-Hel-Split verursacht, via git-stash bestaetigt). Phase 5a + Phase 5c bleiben VOLLSTAENDIG ABGESCHLOSSEN. UI_BUG_HEL_SPLITSCREEN.md Status auf TEILWEISE GELOEST. Visuelle Verifikation durch Chris pending — 5-Punkte-Checkliste in HANDOVER + UI_BUG-Datei. Reine Doku-Wartung der Hel-CSS-Schicht, kein Code-Pfad.*
 
+---
+
+## P-mjolnir-workflow — Mjoelnir-Konventionen in ZERBERUS_MARATHON_WORKFLOW.md verankert (2026-05-15)
+
+**Anlass.** Mjoelnir (Hammerfall) ist das neue Remote-Control-Panel fuer Coda-Sessions. Es kann per Knopfdruck eine Coda-Session starten, einen Feature-Request einreichen und eine Session-Zusammenfassung abrufen. Damit das fuer Zerberus funktioniert, muss der Marathon-Workflow drei Dateikonventionen kennen — die werden mit diesem Patch in `ZERBERUS_MARATHON_WORKFLOW.md` verankert. Mjoelnir selbst lebt im Hammerfall-Repo und ist nicht Teil dieser Aenderung — hier geht es nur um die Coda-Seite des Vertrags.
+
+**Was sich aendert.** Reine Doku-Erweiterung in `ZERBERUS_MARATHON_WORKFLOW.md`. Drei abgegrenzte Aenderungen, keine andere Datei beruehrt (ausser den ueblichen Doku-Pflicht-Updates in SUPERVISOR/PROJEKTDOKU/huginn-doc/README/HANDOVER und die neue `mjolnir.md` selbst).
+
+**Aenderung 1 — Session-Zyklus von 8 auf 12 Schritte erweitert.** Vor diesem Patch begann der Zyklus mit „1. Lies HANDOVER.md". Nach dem Patch beginnt er mit zwei neuen Schritten:
+
+- **Schritt 0:** Prueft ob `FEATURE_REQUEST_ZERBERUS.md` im Repo-Root existiert. Wenn ja → einlesen, hat Prioritaet vor allem in der Aufgabenliste (auch vor dem Default aus dem vorherigen HANDOVER). Nach Abarbeitung Schritt 10.
+- **Schritt 1:** Prueft ob `mjolnir.md` existiert. Wenn ja → einlesen (Kontext der Vorgaenger-Session, Stand der letzten 5-10 Zeilen), danach loeschen. Wenn nicht: kein Problem, normaler Start.
+- **Schritt 9:** Schreibt `mjolnir.md` mit 5-10 Zeilen Session-Zusammenfassung. Mjoelnir-User-Interface fetcht den Dateiinhalt ueber den ZUSAMMENFASSUNG-Button und zeigt ihn Chris an.
+- **Schritt 10:** Wenn ein Feature-Request abgearbeitet wurde → `FEATURE_REQUEST_ZERBERUS.md` umbenennen zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md`. _ERLEDIGT-Dateien bleiben liegen bis Chris sie loescht (oder die naechste Coda-Session sie beim Start aufraeumt).
+- **Schritt 11:** der bisherige Push + sync_repos + verify_sync.
+
+Plus zitierter Standard-Mjoelnir-Prompt als Block-Quote unter dem Zyklus (er enthaelt die Pflicht-Information zum Feature-Request-Pfad, fuer Faelle wo der Coda-Agent ohne Memory-Kontext startet). Chris' bisheriger Prompt funktioniert weiterhin, weil die Feature-Request-Pruefung im Zyklus verankert ist (Schritt 0), nicht im Prompt.
+
+**Aenderung 2 — Doku-Pflicht-Tabelle um zwei Zeilen erweitert** (nach der Zeile fuer HANDOVER.md, vor der Zeile fuer „Diese Datei"):
+
+```
+| mjolnir.md | Kompakt | Session-Zusammenfassung schreiben (5–10 Zeilen). Was wurde gemacht,
+                          was ist offen, gibt es Blocker. Mjoelnir liest diese Datei ueber den
+                          ZUSAMMENFASSUNG-Button. Wird beim naechsten Session-Start von Coda
+                          eingelesen und danach geloescht. |
+| FEATURE_REQUEST_ZERBERUS.md | — | Wenn vorhanden: als Prioritaet abarbeiten. Nach Abarbeitung
+                                    umbenennen zu FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md.
+                                    _ERLEDIGT-Dateien bleiben bis Chris sie loescht. |
+```
+
+**Aenderung 3 — Neue Sektion „Mjoelnir-Konventionen"** zwischen „Stopp-Regeln" und „Doku-Pflicht". Drei Sub-Abschnitte mit Bullet-Listen:
+
+- **mjolnir.md (Session-Zusammenfassung)** — Schreib-Pflicht am Session-Ende, Lese-+-Loesch-Pflicht am Session-Start, Inhalt: 5-10 Zeilen (was wurde gemacht, was ist offen, gibt es Blocker), Mjoelnir fetcht den Dateiinhalt via ZUSAMMENFASSUNG-Button, fail-tolerant wenn Datei nicht existiert.
+- **FEATURE_REQUEST_ZERBERUS.md (priorisierter Arbeitsauftrag)** — Vorrang vor ALLEM in der Aufgabenliste, ALLERERSTER Pruef-Schritt beim Session-Start (vor HANDOVER und MARATHON_WORKFLOW), Inhalt = klare Spezifikation (Supervisor-formuliert oder von Chris direkt eingetippt), Umbenennung nach Abarbeitung zu `_ERLEDIGT.md`.
+- **Rationale (warum separate Dateien statt MARATHON_WORKFLOW.md zu editieren)** — Feature-Requests kommen oft von unterwegs (Chris steht in der Firma, tippt eine Idee ueber Mjoelnir ein), Mjoelnir legt die Datei per API-Endpoint im Repo-Root ab, das muss ohne manuelles Editieren funktionieren.
+
+**Akzeptanzkriterien-Check.** Sechs Akzeptanzkriterien aus dem Patch-Auftrag:
+
+1. Session-Zyklus startet mit Schritt 0 (Feature-Request) und Schritt 1 (mjolnir.md) ✅
+2. mjolnir.md steht in der Doku-Pflicht-Tabelle ✅
+3. FEATURE_REQUEST_ZERBERUS.md steht in der Doku-Pflicht-Tabelle ✅
+4. Sektion „Mjoelnir-Konventionen" erklaert beide Mechanismen ✅
+5. Alter Prompt „Lies HANDOVER.md und ZERBERUS_MARATHON_WORKFLOW.md. Mach weiter." funktioniert weiterhin (Schritt 0 verankert, nicht prompt-abhaengig) ✅
+6. Keine anderen Dateien geaendert (im Patch-Sinn) — die ueblichen Doku-Pflege-Edits in SUPERVISOR/PROJEKTDOKU/huginn-doc/README/HANDOVER + die neue `mjolnir.md` sind Marathon-Workflow-Standard und nicht Teil der Patch-Spezifikation ✅
+
+**Was P-mjolnir-workflow NICHT macht.** Keine Code-Aenderung (keine Python-, JS-, CSS-, HTML-Datei beruehrt). Keine neuen API-Endpoints. Keine Aenderung an `CLAUDE_ZERBERUS.md` (das kommt separat, wenn die Konvention in der Praxis validiert ist). Keine Aenderung an Mjoelnir/Hammerfall selbst (anderes Repo, anderer Session-Scope). Keine neuen Tests (Workflow-Doku ist nicht test-zementiert — die Tests `test_p210_huginn_rag_sync` parsen die Stand-Anker, aber nicht den Session-Zyklus; wenn die Konvention sich in der Praxis nicht bewaehrt, reicht eine ein-Patch-Aenderung am MARATHON_WORKFLOW).
+
+**Risiko und Rollback.** Reines Doku-Patch — null Risiko fuer den laufenden Server, null Risiko fuer bestehende Tests. Rollback: `git revert` auf den Patch-Commit, fertig. Sollte Mjoelnir nie produktiv werden, sind die zwei Zusatz-Schritte 0+1+9+10 No-op (keine Datei vorhanden → nichts zu lesen, nichts zu schreiben, nichts zu loeschen).
+
+**Lessons (1).** Remote-Control eines lokalen Agent-Workflows klappt am robustesten ueber **Dateikonventionen im Repo-Root** statt ueber API-Endpoints im Agent. Begruendung: der Agent prueft Dateien wenn er ohnehin Doku liest (kostet null neuen Code-Pfad); der Steuer-Client legt die Dateien via beliebigem Pfad ab (Mjoelnir-API, manuelles Editieren via VS Code, `gh` Push). Keine neuen Endpoints, kein Auth-Mechanismus zu pflegen, die Konvention ist git-versioniert und damit auditierbar. Backstop: die Konvention muss im allerersten Schritt des Session-Zyklus verankert sein (nicht prompt-abhaengig), sonst kann ein Standard-Prompt sie nicht aktivieren — der Prompt-Text ist optimiert fuer den haeufigen Fall (kein Feature-Request offen), der Zyklus deckt den seltenen Fall ab. Plus: die Konvention ist `_ERLEDIGT`-praezise (Marker im Dateinamen), nicht status-im-Inhalt — Marker im Dateinamen ueberlebt Mjoelnir-Restart und Doku-Refactor robuster als eine Status-Zeile im Inhalt.
+
