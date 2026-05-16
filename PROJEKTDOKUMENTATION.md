@@ -1873,10 +1873,11 @@ Für jede gespeicherte Nachricht werden folgende Metriken automatisch berechnet 
 ### 12.5 Server starten
 
 ```bash
-cd C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus
+cd C:\Users\chris\Python\Zerberus
 venv\Scripts\activate
 uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 ```
+(Pfad seit B-061/2026-05-16; alt: `Rosa\Nala_Rosa\Zerberus`.)
 
 Wichtige URLs (lokal):
 - Chat: http://localhost:5000/nala

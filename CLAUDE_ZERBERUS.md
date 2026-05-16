@@ -1,5 +1,13 @@
 # CLAUDE_ZERBERUS.md – Zerberus Pro 4.0
 
+## Regel 0 — OBERSTES GEBOT: Chris terminalisiert NICHTS was Coda kann (P-umzug, 2026-05-16)
+- **Coda fuehrt jede Operation SELBST aus die ueber das Terminal moeglich ist.** NIEMALS `git`/`pytest`/`pip`/`robocopy`/`venv`/`spacy`/`python`/`gh`-Befehle an Chris delegieren. Coda hat Shell + Bash + PowerShell — also macht Coda es.
+- **Coda merged Branches SELBST auf main und pusht SELBST vor Session-Ende.** Ein Worktree-Branch bleibt nicht offen "damit Chris den merge macht". `git merge --ff-only` + `git push origin main` gehoeren in die Coda-Verantwortung, nicht in eine Mjoelnir-Liste.
+- **`mjolnir.md` enthaelt NUR was physisch unmoeglich ist fuer Coda:** echtes Geraet (iPhone/Tablet), Touch-UX-Gefuehl, Browser-Login-Flow am realen Endpunkt, Tailscale vom Mobilgeraet, Whisper-Spracheingabe am Mikrofon, Docker-Desktop-UI-Klicks, Hardware-Abhaengiges (Drucker, Webcam). KEIN `git`, KEIN `pytest`, KEIN `pip install`.
+- **Der Supervisor (Chat-Fenster) gibt Chris ebenfalls KEINE Terminal-Befehle, sondern baut Coda-Prompts.** Wenn der Supervisor versucht zu sagen "Chris mach jetzt mal X im Terminal" → das ist die selbe Verletzung, nur eine Ebene hoeher.
+- **Verstoss = Session-Abbruch + Korrektur.** Wenn Coda merkt dass er gerade Terminal-Arbeit an Chris delegiert hat → STOPP, zurueck-rollen, selbst machen. Kein "ich hab schon den Prompt geschrieben, jetzt isses zu spaet".
+- **Warum:** Chris hat Coda genau dafuer da — die mechanische Terminal-Arbeit. Delegation an Chris bricht den Kontrakt und macht den Coda-Agent zu einem teuren Ratgeber statt einem Mitarbeiter. Verankerung an dieser Stelle (Regel 0, vor allem anderen) ist Backstop gegen Drift: wer den Marathon-Workflow liest, sieht das Gebot zuerst.
+
 ## Autonome Prioritätsliste — Coda fragt nicht "wie weiter?" (FR-AUTONOME-PRIORITÄT — Prozess-Regel)
 - **AUTONOME-PRIORITÄT** | Wenn alle Phasen-Ziele ✅ und kein expliziter nächster Schritt vom User: 1) Doku-Catchup wenn ≥3 Patches ohne SUPERVISOR/PROJEKTDOKU/huginn_kennt_zerberus-Update → Doku nachholen + Huginn-RAG-Sync | 2) Offene Schulden aus HANDOVER-Liste (pre-existing Failures, Folgebugs mit eigenem Patch) → kleinsten zuerst | 3) WORKFLOW.md prüfen ob nächste Phase-Ziele definiert → erste Ziele angehen | 4) Wenn nichts davon zutrifft → in HANDOVER dokumentieren "Wartet auf Phase-Spec vom User" und STOPPEN
 - **NIEMALS den User fragen "wie möchtest du weitermachen"** wenn die Antwort aus HANDOVER+WORKFLOW ableitbar ist
@@ -356,19 +364,19 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 ## Token-Effizienz
 - Datei bereits im Kontext → NICHT nochmal lesen|nur lesen wenn (a) nicht sichtbar ODER (b) direkt vor Write
 - Doku-Updates am Patch-Ende|ein Read→Write-Zyklus pro Datei
-- CLAUDE_ZERBERUS.md + lessons.md: Bibel-Fibel-Format (Pipes|Stichpunkte|ArtikelWeg)
+- CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md: Bibel-Fibel-Format (Pipes|Stichpunkte|ArtikelWeg)
 - SUPERVISOR/PROJEKTDOKU/README/Patch-Prompts: Prosa (menschliche Leser)
-- Neue Einträge in CLAUDE_ZERBERUS.md + lessons.md IMMER im komprimierten Format schreiben
+- Neue Einträge in CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md IMMER im komprimierten Format schreiben
 
 ## Marathon-Workflow (Phase 5+)
-- Session-Start: HANDOVER.md → ZERBERUS_MARATHON_WORKFLOW.md → loslegen
+- Session-Start-Pflicht (Konsolidierung 2026-05-15): FEATURE_REQUEST_ZERBERUS.md → mjolnir.md → HANDOVER_ZERBERUS.md → MARATHON_WORKFLOW_ZERBERUS.md → lessons_ZERBERUS.md → loslegen
 - Ziele statt Rezepte|WAS nicht WIE|eigene Architektur-Entscheidungen erwünscht
 - Stopp bei ~400k Token oder Kontextvergiftung|aktuellen Patch sauber fertig → Doku → Handover → STOPP
 - Blockiert → Frage in DECISIONS_PENDING parken → nächsten unabhängigen Patch nehmen
-- Session-Ende: HANDOVER.md überschreiben|Manuelle-Tests-Liste pflegen|Patch-Status in Workflow aktualisieren
+- Session-Ende: HANDOVER_ZERBERUS.md überschreiben|Manuelle-Tests-Liste pflegen|Patch-Status in MARATHON_WORKFLOW_ZERBERUS.md aktualisieren
 - Push + sync_repos.ps1 + scripts/verify_sync.ps1 als letzter Schritt
-- **Worktree-Branch IMMER nach main mergen vor Session-Ende|sonst läuft Server auf altem Code auch wenn Patch committed ist|Reihenfolge: merge → push main → HANDOVER schreiben** (Anlass P217: Patch lag fertig auf `claude/upbeat-golick-e85610`, Server las main, FAISS-Fix war committed aber nicht aktiv|User konnte trotz fertigem Patch nichts hochladen). Konkret im Hauptcheckout: `cd C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus && git merge <worktree-branch> --ff-only && git push origin main`. Wenn Merge ausnahmsweise NICHT erfolgt → im HANDOVER explizit vermerken: "Branch noch nicht auf main gemergt — Server zieht alten Code, Patch ist NICHT aktiv."
-- **Session-Start: NICHT fragen "was soll ich machen" (P219-pre — Prozess-Regel)** — die HANDOVER-Empfehlung am Ende des "Nächster Schritt"-Abschnitts ist der Default. Coda lädt HANDOVER.md, liest die Empfehlung, legt los. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird davon abgewichen. Die Antwort "Was möchtest du — A, B oder C?" ist hier verboten — Chris will Ergebnisse sehen, nicht Rückfragen beantworten. Verweis: das ist die Marathon-Variante der allgemeinen FR-AUTONOME-PRIORITÄT-Regel oben.
+- **Worktree-Branch IMMER nach main mergen vor Session-Ende|sonst läuft Server auf altem Code auch wenn Patch committed ist|Reihenfolge: merge → push main → HANDOVER schreiben** (Anlass P217: Patch lag fertig auf `claude/upbeat-golick-e85610`, Server las main, FAISS-Fix war committed aber nicht aktiv|User konnte trotz fertigem Patch nichts hochladen). Konkret im Hauptcheckout: `cd C:\Users\chris\Python\Zerberus && git merge <worktree-branch> --ff-only && git push origin main` (Pfad seit B-061/2026-05-16; alt: `Rosa\Nala_Rosa\Zerberus`). Wenn Merge ausnahmsweise NICHT erfolgt → im HANDOVER explizit vermerken: "Branch noch nicht auf main gemergt — Server zieht alten Code, Patch ist NICHT aktiv."
+- **Session-Start: NICHT fragen "was soll ich machen" (P219-pre — Prozess-Regel)** — die HANDOVER-Empfehlung am Ende des "Nächster Schritt"-Abschnitts ist der Default. Coda lädt HANDOVER_ZERBERUS.md, liest die Empfehlung, legt los. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird davon abgewichen. Die Antwort "Was möchtest du — A, B oder C?" ist hier verboten — Chris will Ergebnisse sehen, nicht Rückfragen beantworten. Verweis: das ist die Marathon-Variante der allgemeinen FR-AUTONOME-PRIORITÄT-Regel oben.
 - **HANDOVER-Formulierung am Session-Ende auch autonom (P219-pre)** — Statt "Was soll ich machen — A, B oder C?" als Schlussfrage schreibt Coda eine Empfehlung in der Form "Nächste Session startet mit X (Begründung — z.B. niedrigster Aufwand / direkte Schulden-Folgekarte / User-Bug-Report). Falls Chris was anderes will, überschreibt er die Eröffnungs-Message." Die nächste Coda-Instanz kann dann ohne Rückfrage loslegen. Nur Architektur-Entscheidungen mit echtem Risiko bleiben als Frage stehen (in DECISIONS_PENDING).
 
 ## HANDOVER "Nächster Schritt" — Autonomie-Regel (verschärft)
@@ -476,12 +484,13 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 
 ## Projektpfad
 ```
-C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus
+C:\Users\chris\Python\Zerberus
 ```
+(Umzug aus `C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus` per B-061 am 2026-05-16. Ratatoskr + Claude-Repo bleiben am alten Ort; `sync_repos.ps1` und `scripts/verify_sync.ps1` sind seit B-061 portabel.)
 
 ## Server starten
 ```bash
-cd C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus
+cd C:\Users\chris\Python\Zerberus
 venv\Scripts\activate
 uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 ```
@@ -762,13 +771,17 @@ uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 | Vidar | `test_vidar.py` | Smoke (Go/No-Go) | `vidartest123` |
 
 ## Weiterführende Doku
-- Projektspezifische Lessons: `lessons.md`
+- Projektspezifische Lessons: `lessons_ZERBERUS.md`
 - Globale Lessons: https://github.com/Bmad82/Claude/lessons/
 - Patch-Archiv: `docs/PROJEKTDOKUMENTATION.md`
 
-## ⚠️ Dateinamen-Konvention
+## ⚠️ Dateinamen-Konvention (Konsolidierung 2026-05-15)
 - Projektspezifisch: `CLAUDE_ZERBERUS.md` (diese Datei)
 - Supervisor: `SUPERVISOR_ZERBERUS.md`
+- Übergabe: `HANDOVER_ZERBERUS.md`
+- Workflow: `MARATHON_WORKFLOW_ZERBERUS.md` (vorher: `ZERBERUS_MARATHON_WORKFLOW.md` — Suffix-Position vereinheitlicht)
+- Lessons: `lessons_ZERBERUS.md`
+- Design: `docs/DESIGN.md` (Sub-Doku in `docs/`, KEIN Suffix — Test-Suite `test_design_system::*` und ein knappes Dutzend andere Module pinnen den Pfad an, Umbenennung wäre invasiv und nicht durch die Konvention gefordert, die auf Root-Doku zielt)
 - Patch-Prompts: IMMER vollen Dateinamen mit Projektsuffix
 - NIEMALS mit globaler CLAUDE.md verwechseln/zusammenführen
 
@@ -784,6 +797,7 @@ uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 - Falls `sync_repos.ps1` Fehler wirft: Chris informieren, NICHT stillschweigend überspringen
 - Falls Umgebung kein PowerShell hat: explizit melden „⚠️ sync_repos.ps1 nicht ausgeführt — bitte manuell nachholen"|nicht „vergessen"
 - Session-Ende ODER nach 5. Patch ist KEINE Ausrede mehr|sync nach JEDEM push (Coda-Setup pusht zuverlässig, vergisst aber Sync)
-- `powershell -ExecutionPolicy Bypass -File sync_repos.ps1`|sync Ratatoskr (SUPERVISOR/CLAUDE/PROJEKTDOKU/lessons/backlog/README) + Claude-Repo (lessons.md→`lessons/zerberus_lessons.md`)|zieht Commit-Msg aus letztem Zerberus-Commit|pusht nur bei Änderungen
+- `powershell -ExecutionPolicy Bypass -File sync_repos.ps1`|sync Ratatoskr (SUPERVISOR/CLAUDE/PROJEKTDOKU/lessons/backlog/README) + Claude-Repo (lessons_ZERBERUS.md→`lessons/zerberus_lessons.md`)|zieht Commit-Msg aus letztem Zerberus-Commit|pusht nur bei Änderungen
 - NIEMALS Ratatoskr/Claude-Repo manuell editieren|nur via `sync_repos.ps1`|direkte Commits werden überschrieben
 - Universelle Lessons können direkt in `C:\Users\chris\Python\Claude\lessons\` (z.B. `sqlite-db.md`)|Sync-Script fasst sie nicht an (schreibt nur `zerberus_lessons.md`)
+- **Wichtig:** sync_repos.ps1 muss nach der Konsolidierung auf den neuen Lessons-Pfad `lessons_ZERBERUS.md` zeigen — wenn das Skript noch `lessons.md` liest, läuft es ins Leere.

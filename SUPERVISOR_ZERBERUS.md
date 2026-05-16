@@ -2039,8 +2039,8 @@ Whisper 4.5 + BERT 0.5 + Gemma E2B 3.0 + DualEmbedder 0.5 + Reranker 1.0 + Windo
 
 ### Repos (alle 3 müssen synchron sein)
 
-- **Zerberus** (Code, lokal): `C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus`
-- **Ratatoskr** (Doku-Sync, GitHub): `C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr`
+- **Zerberus** (Code, lokal): `C:\Users\chris\Python\Zerberus` (B-061: Umzug 2026-05-16 aus `Rosa\Nala_Rosa\Zerberus`)
+- **Ratatoskr** (Doku-Sync, GitHub): `C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr` (zieht NICHT mit)
 - **Claude** (universelle Lessons, GitHub): `C:\Users\chris\Python\Claude`
 
 ---
@@ -2103,7 +2103,7 @@ Wenn die Liste leer ist, wird nichts angezeigt — keine "Liste leer"-Zeile, kei
 - **Session-ID ≠ User-Trennung** — Metriken pro User erst nach DB-Architektur-Fix vertrauenswürdig
 - **Patch-Prompts IMMER als `.md`-Datei** — NIE inline im Chat. Claude Code erhält den Inhalt per Copy-Paste aus der Datei (Patch 101)
 - **Dateinamen `CLAUDE_ZERBERUS.md` und `SUPERVISOR_ZERBERUS.md` sind FINAL** — in Patch-Prompts nie mit alten Namen (`CLAUDE.md`, `HYPERVISOR.md`) referenzieren (Patch 100/101)
-- **Lokale Pfade:** Ratatoskr liegt unter `C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr\` (nicht `Rosa\Ratatoskr\`), Bmad82/Claude unter `C:\Users\chris\Python\Claude\` (nicht `Rosa\Claude\`). Patch-Prompts mit falschen Pfaden → immer erst verifizieren, nicht raten
+- **Lokale Pfade:** Zerberus liegt seit B-061 (2026-05-16) unter `C:\Users\chris\Python\Zerberus\` (Umzug aus `Rosa\Nala_Rosa\Zerberus`). Ratatoskr liegt weiterhin unter `C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr\` (nicht `Rosa\Ratatoskr\`), Bmad82/Claude unter `C:\Users\chris\Python\Claude\` (nicht `Rosa\Claude\`). Patch-Prompts mit falschen Pfaden → immer erst verifizieren, nicht raten
 - **Bug-Sammelstelle NICHT als Erstreaktion in einen Patch verwandeln (P219-pre)** — siehe Sektion "Supervisor-Verhalten — Bug-Sammelstelle" oben. Erst sammeln, erst auf Trigger-Phrase warten, dann bauen.
 
 ---
