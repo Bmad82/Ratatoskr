@@ -9599,3 +9599,338 @@ Plus zitierter Standard-Mjoelnir-Prompt als Block-Quote unter dem Zyklus (er ent
 
 **Lessons (1).** Remote-Control eines lokalen Agent-Workflows klappt am robustesten ueber **Dateikonventionen im Repo-Root** statt ueber API-Endpoints im Agent. Begruendung: der Agent prueft Dateien wenn er ohnehin Doku liest (kostet null neuen Code-Pfad); der Steuer-Client legt die Dateien via beliebigem Pfad ab (Mjoelnir-API, manuelles Editieren via VS Code, `gh` Push). Keine neuen Endpoints, kein Auth-Mechanismus zu pflegen, die Konvention ist git-versioniert und damit auditierbar. Backstop: die Konvention muss im allerersten Schritt des Session-Zyklus verankert sein (nicht prompt-abhaengig), sonst kann ein Standard-Prompt sie nicht aktivieren — der Prompt-Text ist optimiert fuer den haeufigen Fall (kein Feature-Request offen), der Zyklus deckt den seltenen Fall ab. Plus: die Konvention ist `_ERLEDIGT`-praezise (Marker im Dateinamen), nicht status-im-Inhalt — Marker im Dateinamen ueberlebt Mjoelnir-Restart und Doku-Refactor robuster als eine Status-Zeile im Inhalt.
 
+---
+
+## B-061 + P-umzug — Pfad-Audit, OBERSTES GEBOT und Zerberus-Umzug nach `C:\Users\chris\Python\Zerberus` (2026-05-16)
+
+**Anlass.** Drei verzahnte Marathon-Auftraege an einem Tag, retrospektiv eingetragen in der B-aufraeumen-Session (2026-05-18) — zwischen P-mjolnir-workflow (2026-05-15) und dieser Doku-Catchup-Session hatte die PROJEKTDOKU-Pflege haengen geblieben. Sequenz: B-061 (portable Sync-Scripts) → P-umzug Teil 1 (OBERSTES GEBOT verankert) → P-umzug Teil 2 (physischer Umzug). Auslaesser: vorige Coda-Session hatte einen ungemergten Worktree-Branch in mjolnir.md an Chris delegiert ("Schritt 0: ff-merge dieses Branch") — klassischer Coda-Faulheits-Verstoss gegen die Trennung "Coda terminalisiert, Chris bewertet visuell". Plus: der bestehende `sync_repos.ps1` enthielt hardcoded den alten Pfad `C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus`, was bei einem geplanten Umzug ein Stolperstein gewesen waere.
+
+**Edits B-061** (Commit Zerberus `05ef9e8`).
+
+- **`sync_repos.ps1`** (Repo-Root) — Pfade portabel ueber `$PSScriptRoot` ermittelt (Script-Standort = Zerberus-Root, von dort relative Verzeichniswurzel). Ratatoskr/Claude via Env-Vars uebersteuerbar (`ZERBERUS_RATATOSKR_PATH`, `ZERBERUS_CLAUDE_PATH`), sonst Geschwister-Detection (probiert `(Parent)\Ratatoskr` neben Zerberus) mit bekanntem Fallback auf den Alt-Pfad. Funktioniert sowohl im alten Pfad (`Rosa\Nala_Rosa\Zerberus`) als auch nach Umzug nach `C:\Users\chris\Python\Zerberus` — Ratatoskr muss nicht mitziehen.
+- **`scripts/verify_sync.ps1`** — analog portabel via `$PSScriptRoot` und Env-Var-Overrides.
+- **Pfad-Audit in `.py`** — `grep -ri "Rosa\\\\Nala_Rosa\\\\Zerberus" *.py` ueber das gesamte Repo. **Null Code-Treffer.** Alle Python-Module verwenden bereits relative Pfade (`Path(__file__)` / `os.path.dirname` / `settings.paths.*`). Server, Tests, Sync-Scripts sind umzugs-bereit.
+- **B-070 Easter Egg** — versteckt in [`zerberus/main.py`](zerberus/main.py) `create_app()` zwischen `app.mount("/static"...)` und `@app.get("/")`: `# make love ... not war — W.F. Weiher, Stanford AI Lab, 1967` (erstes dokumentiertes Software-Easter-Egg, vermerkt im BACKLOG als ERLEDIGT). Kein funktionaler Impact.
+- **`MIGRATION_REPORT_ZERBERUS.md`** (neu, Repo-Root) — was ueberprueft wurde, was geaendert wurde, was der Umzug konkret braucht (robocopy + Venv-Neuaufbau).
+
+**Edits P-umzug Teil 1** (Commit Zerberus `29b95bf`).
+
+- **`CLAUDE_ZERBERUS.md`** — OBERSTES GEBOT als **Regel 0** an den Anfang, vor allen anderen Regeln. Chris terminalisiert NICHTS was Coda kann; niemals git/pytest/pip/robocopy/npm-Befehle an Chris delegieren; Coda merged Branches SELBST auf main + pusht SELBST vor Session-Ende; mjolnir.md enthaelt NUR was physisch unmoeglich ist (Touch-Test, echtes Geraet, Docker Desktop UI); Supervisor (Chat-Fenster) gibt KEINE Terminal-Befehle sondern baut Coda-Prompts (.md-Dateien); Verstoss = sofortige Korrektur.
+- **`lessons_ZERBERUS.md`** — gleicher Block als erste Sektion vor allen anderen Lessons.
+
+**Edits P-umzug Teil 2** (Commit Zerberus `11307ab`).
+
+- **Physischer Umzug** via `robocopy` von `C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus` nach `C:\Users\chris\Python\Zerberus`. Beide Pfade existieren weiterhin parallel (der alte als git-worktree-Quelle weiter nutzbar — alle `.claude/worktrees/*`-Verzeichnisse haengen am alten Pfad).
+- **Venv-Neuaufbau** im neuen Pfad (`python -m venv venv` + `pip install -r requirements.txt`).
+- **Service-Test** aus dem neuen Pfad (`start.bat` aus cmd, danach `unset PROJECTS` + uvicorn aus bash — Lesson aus B-db-merge unveraendert).
+- Ratatoskr (`C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr`) und Claude (`C:\Users\chris\Python\Claude`) bleiben am alten Ort.
+
+**Tests.** B-061: kein neuer Test, Source-Audit per Source-Inspection in `sync_repos.ps1` und `scripts/verify_sync.ps1`. P-umzug: kein neuer Test (Doku-Patch). Service-Health-Check `/health` aus dem neuen Pfad gruen. Alle bestehenden Tests laufen sowohl aus altem als auch neuem Pfad (relative `Path(__file__)`-Auflösung).
+
+**Lessons.** (1) **Worktree-Branches selbst auf main mergen** vor Session-Ende — `git stash push` fuer uncommitted Edits → `git merge --ff-only` → `git stash pop` → eigenen Worktree-Branch per `git rebase main` aktualisieren → ff-merge → push. Konfliktfrei wenn die Edits unterschiedliche Zeilen treffen. (2) **OBERSTES GEBOT als Backstop pro Projekt** — Regel 0 in `CLAUDE_<PROJEKT>.md` plus erste Sektion in `lessons_<PROJEKT>.md`. Universell ins Claude-Repo verlegt mit B-global-lessons (2026-05-16). (3) **Pfad-Audit vor Umzug** — `grep -ri "<alter-pfad>" *.py *.ps1 *.md` deckt hardcoded Pfade vor dem Umzug auf. Sync-Scripts ueber `$PSScriptRoot` + Env-Var-Overrides portabel machen ist eine Stunde Arbeit, spart ein Drama beim Umzug.
+
+**Status-Updates parallel.** `BACKLOG_ZERBERUS.md`-Item B-061 als ERLEDIGT markiert. Neuer Memory-Eintrag (P-umzug) als Anti-Pattern-Backstop fuer alle kuenftigen Coda-Sessions. **Schulden #6** (Worktree-Setup-Drift mit `faiss`/`config.yaml`) bleibt unveraendert offen — Worktree-Setup ist eigener Aufwand und nicht Teil dieser Patches.
+
+**Risiko und Rollback.** Mittel. Der eigentliche `robocopy`-Umzug ist reversibel (alter Pfad bleibt parallel), aber Venv-Neuaufbau und Service-Test sind zeitintensiv. Rollback: einfach den alten Pfad weiter als primaeren benutzen, Sync-Scripts funktionieren von dort weiterhin.
+
+---
+
+## B-072 — Huginn Voice→Whisper-Pipeline in Telegram (2026-05-16)
+
+**Anlass.** Mjoelnir-Auftrag (Folge zu Backlog-Item B-072, das nach P182 / L7 offen war). Vor B-072 lautete der Voice-Pfad im Telegram-Bot: Sprachnachrichten landeten im Unsupported-Media-Block (P182 Block 2 Option A) und bekamen eine freundliche Absage-Message ("Sprachnachrichten kann ich gerade nicht verarbeiten"). Whisper-Container laeuft seit Patch 99-ish lokal auf `localhost:8002`, wurde aber nur ueber das Dictate-Modul der Nala-Web-UI angesprochen. Telegram-User mit Voice-Memo-Reflexen (Chris selbst hauptsaechlich) verloren die Eingabe.
+
+**Edits.**
+
+- **[`zerberus/modules/telegram/bot.py`](zerberus/modules/telegram/bot.py)** — neuer Helper `download_telegram_file(file_id, bot_token)`. Schritt 1: Telegram `getFile`-Endpoint aufrufen (`https://api.telegram.org/bot<TOKEN>/getFile?file_id=...`) → response enthaelt `file_path` (Server-Pfad auf Telegram-Storage). Schritt 2: Download via `https://api.telegram.org/file/bot<TOKEN>/<file_path>` → `bytes`. Return: `bytes` oder `None` bei Fehler. Logging mit gekuerztem File-ID-Praefix (kein voller Token, kein voller Pfad — Token-Leak-Schutz).
+- **[`zerberus/modules/telegram/router.py`](zerberus/modules/telegram/router.py)** — neuer Helper `_transcribe_voice_message(voice_data, settings)`. Whisper-Call via `zerberus.utils.whisper_client.transcribe` mit den Bytes aus `download_telegram_file`. Return: transkribierter String oder `None`. Plus: Voice-Pfad in `_legacy_process_update` aus dem Unsupported-Media-Block ausgezweigt — wenn `voice` in `message`: Bytes laden, transkribieren, in `message["text"]` injizieren und durch die normale Text-Pipeline laufen lassen (Persona, RAG, Guard, Memory). Bei Whisper-Offline (`None`-Return mit IOError): eine freundliche Absage-Message ("Voice-Modul gerade nicht verfuegbar"), kein Crash. Bei leerem Transkript (`""`-Return): eigene Silence-Fallback-Message ("Konnte nichts verstehen, bitte nochmal").
+- **Channel-Routing.** `_run_pipeline()` wird mit `channel="telegram"` aufgerufen, Guard greift mit telegram-spezifischen Policies (P181-Allowlist, P182-Intent-Plausibilitaet).
+
+**Tests.** Neuer File [`zerberus/tests/test_huginn_voice.py`](zerberus/tests/test_huginn_voice.py) mit **16 neuen Tests** in vier Klassen — `TestDownloadTelegramFile` (5: 200-OK-Pfad, getFile-Failure, Download-Failure, Token-Mask im Log, empty-bytes), `TestTranscribeVoiceMessage` (3: Whisper-OK, Whisper-Offline, leeres Transkript), `TestLegacyProcessUpdateVoicePath` (5: Voice → Transkript → Text-Pipeline, Whisper-Offline → Absage, leer → Silence-Fallback, RAG/Guard/Memory greifen wie bei Text), `TestHuginnVoiceInlineMarker` (3: Marker im Source, Backlog-B-072-Referenz, FEATURE_REQUEST-Audit-Spur). 16/16 lokal gruen. Telegram + Huginn + Whisper-Suite gesamt 50/50 gruen.
+
+**Logging.** Voice-Pfad logt drei Events: `voice_received` (file_id-Praefix, duration, mime_type), `voice_transcribed` (Transkript-Laenge in Zeichen, kein Inhalt), `voice_transcription_failed` (Grund — offline/empty/network). Token-Mask via String-Slice (`token[:8] + "..."`).
+
+**Lessons (1).** Externe API-Calls aus dem Bot-Pfad (Telegram-`getFile` + Download + Whisper) muessen fail-quiet und mit klaren User-Messages enden. Crash im Voice-Pfad ist worse als eine Absage-Message — der User wird sonst stillschweigend ignoriert, ohne zu wissen warum. Plus: Token-Logging-Disziplin (nur Praefix-Hash, nie voller Token) ist bei jedem neuen API-Pfad Pflicht.
+
+**Status-Updates parallel.** `BACKLOG_ZERBERUS.md`-Item B-072 auf ERLEDIGT mit Code-Pfaden + Test-File-Pfad. **Anti-Pattern dieser Session (separat).** Die Session hatte Code + Tests + Commit + `_ERLEDIGT.md`-Audit komplett — aber `mjolnir.md` NICHT ueberschrieben. Chris fetchte ueber Mjoelnir die alte P-umzug-Datei und konnte B-072 nicht als erledigt sehen. Folge: B-mjolnir-fix als naechster Patch verankerte die Pflicht im Workflow. Diese Doku-Catchup-Session traegt den Eintrag retrospektiv nach (Commit `c04772d`).
+
+**Risiko und Rollback.** Gering. Code-Pfad ist klar abgegrenzt (Voice-Pfad vor dem alten Unsupported-Media-Block). Rollback: `git revert` auf den Commit, Voice-Nachrichten kriegen wieder die Absage. Whisper-Container wird nicht beruehrt.
+
+---
+
+## B-mjolnir-fix — mjolnir.md-Round-Trip-Pflicht im Workflow verankern (2026-05-16)
+
+**Anlass.** Anti-Pattern aus B-072 (siehe oben): die Session hatte Code + Tests + Commit + `_ERLEDIGT.md`-Audit komplett, aber `mjolnir.md` wurde nicht ueberschrieben. Chris fetchte ueber Mjoelnirs ZUSAMMENFASSUNG-Button die alte P-umzug-Datei und konnte nicht erkennen ob B-072 abgeschlossen ist. Round-Trip kaputt. Plus Klarstellung warum `_ERLEDIGT.md`-Audit kein Ersatz fuer mjolnir.md ist: `mjolnir.md` ist **Single-Slot-State** (genau eine aktuelle Session-Zusammenfassung), `_ERLEDIGT.md` ist **Audit-Log** (akkumuliert).
+
+**Edits in `MARATHON_WORKFLOW_ZERBERUS.md`.**
+
+- Sektion **„Mjoelnir-Konventionen"** (vorher kurz, nach P-mjolnir-workflow) erweitert um klare **Schreib-Pflicht am Session-Ende** fuer mjolnir.md.
+- Sektion **„Was passiert ohne mjolnir.md-Update"** als Anti-Pattern-Block ergaenzt — zitiert B-072 explizit als Lehrstueck.
+- Klare Trennung zwischen **Single-Slot vs Audit-Log** mit Tabelle (Pflege-Regeln, Lebensdauer, Ueberschreib-Politik).
+- Session-Zyklus-Schritt-10 explizit als „mjolnir.md ueberschreiben — kein if/else, kein optional" formuliert (wird durch B-mjolnir-fix-2 nochmal verschaerft).
+
+**Tests.** Keine — reines Doku-Patch.
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Workflow-Konventionen ueberleben nur wenn sie als Ablauf-Pflicht im Session-Zyklus formuliert sind, nicht als Empfehlung am Sektions-Ende. Der nachfolgende Patch (B-mjolnir-fix-2) musste die Pflicht nochmal verschaerfen — Beweis dass die erste Formulierung zu weich war.
+
+**Status-Updates parallel.** `lessons_ZERBERUS.md` und `Bmad82/Claude/GLOBAL_LESSONS.md` (mit B-global-lessons) auf "mjolnir.md ist PFLICHT am Session-Ende" erweitert. Commit Zerberus `88c55d9` + `185969a`.
+
+---
+
+## B-global-lessons — 4 Marathon-Workflow-Lessons ins Claude-Repo (2026-05-16)
+
+**Anlass.** Im Zeitraum P-umzug + B-061 + B-072 + B-mjolnir-fix haben sich vier universelle Lessons herausdestilliert, die nicht zerberus-spezifisch sind sondern fuer JEDES Projekt im Marathon-Workflow (Coda + Supervisor + Mjoelnir) gelten. Universelle Lessons gehoeren ins Claude-Repo (`Bmad82/Claude/GLOBAL_LESSONS.md`), projektspezifische ins Zerberus-Repo (`lessons_ZERBERUS.md`).
+
+**Edits in `C:\Users\chris\Python\Claude\GLOBAL_LESSONS.md`.** Vier neue `## ...`-Sektionen, jede mit Datum + Anlass-Patch im Titel:
+
+1. **OBERSTES GEBOT (2026-05-16, Zerberus P-umzug).** Chris terminalisiert NICHTS was Coda kann; niemals git/pytest/pip/robocopy/npm-Befehle an Chris delegieren; Coda merged Branches SELBST auf main + pusht SELBST vor Session-Ende; mjolnir.md enthaelt NUR was physisch unmoeglich ist (Touch-Test, echtes Geraet, Docker Desktop UI); Supervisor (Chat-Fenster) gibt KEINE Terminal-Befehle sondern baut Coda-Prompts (.md-Dateien); Verstoss = sofortige Korrektur. **Backstop pro Projekt:** Regel 0 in `CLAUDE_<PROJEKT>.md` (vor jeder anderen Regel) plus erste Sektion in `lessons_<PROJEKT>.md`.
+
+2. **mjolnir.md ist PFLICHT am Session-Ende (2026-05-16, Zerberus B-072).** mjolnir.md wird am Ende JEDER Session ueberschrieben — ausnahmslos. Alte Version wird IMMER ersetzt. Ohne mjolnir.md-Update ist der Mjoelnir-Round-Trip kaputt: Chris kann nicht erkennen ob ein Auftrag abgeschlossen ist. Session-Zyklus Schritt 10 ist NICHT optional. **Single-Slot vs Audit-Log:** mjolnir.md ist Single-Slot-State (genau EINE aktuelle Session-Zusammenfassung, wird beim naechsten Session-Start eingelesen und geloescht). `_ERLEDIGT.md` ist Audit-Log (akkumuliert, bleibt bis User es loescht).
+
+3. **Worktree-Branches selbst auf main mergen (2026-05-16, Zerberus B-061).** Coda merged Worktree-Branches SELBST auf main vor Session-Ende; NIEMALS einen ungemergten Branch als „Schritt 0" in mjolnir.md an Chris delegieren — das ist Terminal-Arbeit und faellt unter das OBERSTE GEBOT. Wenn ff-merge nicht moeglich: rebase selbst durchfuehren oder Merge-Commit erstellen. **Pattern:** `git stash push` fuer uncommitted Edits → `git merge --ff-only` → `git stash pop` → eigenen Worktree-Branch per `git rebase main` aktualisieren → ff-merge → push.
+
+4. **Supervisor-Verhalten: Coda-Prompts statt Terminal-Befehle (2026-05-16, Zerberus).** Wenn Chris ein Problem schildert das Coda loesen kann: Supervisor baut einen Coda-Prompt (.md-Datei) statt Chris Terminal-Befehle zu geben. Auch „nur ein Befehl" ist einer zu viel. Die Frage ist immer: „Kann Coda das selbst?" — Antwort ist in 95 % der Faelle ja. **Konkretes Pattern fuer Supervisor:** wenn ein Schritt mehr als „Browser oeffnen, klicken, sehen" verlangt → Coda-Prompt als `.md`-Datei (FEATURE_REQUEST oder Mjoelnir-Auftrag), nicht ein Inline-PowerShell-Snippet im Chat.
+
+Plus geplant nachgetragen am 2026-05-17: **Multi-Session-Status-Header fuer mjolnir.md** (mit B-mjolnir-multisession, eigene Sektion in GLOBAL_LESSONS.md unter dem Datum 2026-05-17).
+
+**Tests.** Keine — reines Doku/Lessons-Patch im Claude-Repo.
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Universalitaet einer Lesson entscheidet sich nach der Frage „kann das jedes andere Marathon-Projekt brauchen?". `OBERSTES GEBOT` ja, `unset PROJECTS vor uvicorn aus bash` nein (das ist Zerberus-Bash-Setup-spezifisch). Backstop fuer die Universal-vs-Spezifisch-Entscheidung: wenn die Lesson eine Projekt-Datei oder einen Projekt-Pfad nennt, ist sie projektspezifisch; wenn sie nur Workflow- oder Tooling-Konzepte beschreibt, ist sie universell.
+
+**Status-Updates parallel.** Commit `63d3081` umfasst nur die Lessons-Sync via `sync_repos.ps1` (Claude-Repo bekommt die Datei-Kopie, Zerberus hat sich nicht geaendert). Neuer Eintrag in `lessons_ZERBERUS.md` mit Verweis: „Universelle Lessons in `Bmad82/Claude/GLOBAL_LESSONS.md` — siehe dort fuer Workflow-Regeln, hier nur Zerberus-spezifisches".
+
+---
+
+## B-mjolnir-fix-2 — mjolnir.md-Round-Trip verschaerft (2026-05-16/17)
+
+**Anlass.** Folge zu B-mjolnir-fix (2026-05-16). Die Pflicht „mjolnir.md am Session-Ende ueberschreiben" stand zwar schon im Workflow — aber sie war als if/else formuliert („wenn FEATURE_REQUEST vorlag", „wenn Tokens uebrig"). Die naechste Session (B-global-lessons) hat den Hinterausgang gefunden: „kein FEATURE_REQUEST → mjolnir.md nicht noetig". Anti-Pattern wiederholt sich. Loesung: Pflicht **unbedingt** formulieren.
+
+**Edits in `MARATHON_WORKFLOW_ZERBERUS.md`.**
+
+- **Sektion „mjolnir.md (Session-Zusammenfassung) — PFLICHT, AUSNAHMSLOS"** — der Schreib-Akt am Session-Ende ist **gleichrangig mit HANDOVER (Schritt 8) und Push (Schritt 12)**, kein if/else, kein optional, kein „wenn Token uebrig". Auch wenn kein FEATURE_REQUEST vorlag, auch wenn die Session nur ein Mini-Patch war, auch wenn das Token-Budget knapp ist.
+- **Cleanup-Regel** — wenn beim Session-Start keine mjolnir.md existiert: normaler Start (z.B. nach `git clone`). Aber am Session-Ende MUSS sie da sein.
+- **Anti-Pattern-Block aus B-072 zitiert** — explizit als Lehrstueck im Workflow zementiert: „Coda hat den Patch committed + `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` mit Audit-Spur geschrieben — aber `mjolnir.md` NICHT ueberschrieben. Chris hat ueber Mjoelnir die alte P-umzug-Zusammenfassung gefetcht und konnte nicht erkennen ob B-072 durch ist. Das `_ERLEDIGT`-File ersetzt mjolnir.md NICHT: das `_ERLEDIGT`-File akkumuliert Auftraege, mjolnir.md ist die EINE aktuelle Session-Zusammenfassung fuer den Round-Trip-Fetch."
+
+**Tests.** Keine — reines Doku-Patch.
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Round-Trip-Pflichten gehoeren als **unbedingt** formuliert (`AUSNAHMSLOS, AM ENDE JEDER SESSION`), nicht als if/else — sonst findet der naechste Faulheits-Drift einen Optional-Hinterausgang. Backstop-Pattern: wenn eine Pflicht innerhalb einer Session zum zweiten Mal verletzt wird (B-mjolnir-fix → noch verletzt → B-mjolnir-fix-2), ist die Formulierung das Problem, nicht der ausfuehrende Agent. Verschaerfen statt nochmal sagen.
+
+**Status-Updates parallel.** Commit Zerberus `c56d66c` + `0e183d0`. `lessons_ZERBERUS.md` Eintrag „mjolnir.md ist PFLICHT, AUSNAHMSLOS" ueberschrieben (nicht akkumuliert — die alte if/else-Variante wird komplett ersetzt). `GLOBAL_LESSONS.md` im Claude-Repo bekommt den verschaerften Text (siehe naechster Patch B-mjolnir-multisession fuer den Auto-Sync).
+
+---
+
+## B-mjolnir-multisession — STATUS-Header + QUEUED-Pattern + dreiphasiger Selbsttest (2026-05-17)
+
+**Anlass.** Drei zusammengehoerende Probleme aus den Mai-Sessions, die im Workflow nicht klar gefasst waren. **Problem 1:** Multi-Session-Auftraege (ein FEATURE_REQUEST der ueber mehrere Coda-Sessions laeuft) hatten keinen sichtbaren Status — Chris fetchte mjolnir.md und musste den Inhalt lesen um zu wissen ob fertig oder nicht. **Problem 2:** Wenn Chris einen neuen FEATURE_REQUEST schickte waehrend der alte noch lief (z.B. Mobile-Eingabe von unterwegs), ueberschrieb Mjoelnir-API den alten — verlorene Arbeit. **Problem 3:** Selbsttest am Session-Ende war als „Verify-Push" formuliert, aber nicht praezise genug (was genau wird verifiziert? in welcher Reihenfolge?).
+
+**Edits in `MARATHON_WORKFLOW_ZERBERUS.md`.**
+
+**1. STATUS-Header als erster Block in mjolnir.md.** Pflichtformat — die ersten Zeilen jeder mjolnir.md muessen sein:
+
+```
+**STATUS:** FERTIG | IN_ARBEIT | BLOCKIERT
+**AUFTRAG:** <Kurzname>
+**FORTSCHRITT:** <X von Y Sessions> | <Phasen-Stand>
+**NÄCHSTE SESSION:** <was zuerst dran ist> | entfaellt (FERTIG)
+**WARNUNG:** <nur bei IN_ARBEIT/BLOCKIERT> KEINEN NEUEN FEATURE_REQUEST SCHICKEN — alter Auftrag noch in Bearbeitung
+```
+
+Bei `FERTIG` entfaellt die WARNUNG-Zeile, ansonsten muss sie fett und als ERSTES sichtbar sein. Chris kann am Status auf einen Blick erkennen: muss ich Geduld haben oder ist der Auftrag durch.
+
+**2. FEATURE_REQUEST_ZERBERUS_QUEUED.md als Ueberschreibungs-Schutz.** Im Session-Start (Schritt 0) neuer Check: wenn `FEATURE_REQUEST_ZERBERUS.md` existiert UND letzte mjolnir.md hatte STATUS = IN_ARBEIT UND der Auftrag-Kurzname im FEATURE_REQUEST stimmt NICHT mit dem letzten Auftrag in mjolnir.md ueberein → **KONFLIKT erkannt**:
+
+- (a) Neuen FEATURE_REQUEST_ZERBERUS.md zu `FEATURE_REQUEST_ZERBERUS_QUEUED.md` umbenennen
+- (b) Alten Auftrag aus mjolnir.md (oder letztem Commit der `_ERLEDIGT.md`-Historie) als FEATURE_REQUEST_ZERBERUS.md rekonstruieren
+- (c) Alten Auftrag zuerst fertig machen
+- (d) Danach den QUEUED-Auftrag dran nehmen (umbenennen zurueck zu FEATURE_REQUEST_ZERBERUS.md)
+- (e) In mjolnir.md beide Auftraege erwaehnen („Queue: 1 weiterer Auftrag wartet")
+
+Wenn der Kurzname im neuen FEATURE_REQUEST uebereinstimmt: kein Konflikt, Chris hat den gleichen Auftrag noch einmal eingereicht (idempotent — normaler Multi-Session-Fortgang).
+
+**3. Dreiphasiger Selbsttest am Session-Ende.**
+
+- **Phase 1 (Lokal-Selbsttest, vor Commit).** Alle Tests im veraenderten Modul lokal laufen lassen. Pre-existing Failures via `git stash`-Vergleich als nicht-durch-diesen-Patch verifizieren. Worktree-Setup-Drift (Schulden #6) als bekannte Ursache klar abgrenzen.
+- **Phase 2 (Pre-Push remote-vergleichbar).** `git log origin/main..HEAD --oneline` — gibt es lokale Commits die noch nicht gepusht sind. `git status` — sauber oder gibt es uncommitted changes. `git remote -v` — zeigt origin auf den richtigen Repo-URL.
+- **Phase 3 (Post-Push HTTP-HEAD).** Nach Push auf GitHub: `Invoke-WebRequest -Method Head` auf `https://github.com/Bmad82/Zerberus/blob/main/<aktuelle-Datei>` → HTTP 200 = sichtbar auf GitHub. Plus `raw.githubusercontent.com/.../...md` Content-Length matched lokale Dateigroesse. Beide Checks parallel — wenn HEAD 200 sagt aber Content-Length nicht matched, ist eine CDN-Stale-Cache-Variante im Spiel (B-status-snapshot-Sync-Diagnose Fall E).
+
+**Tests.** Keine — reines Doku-Patch.
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Multi-Session-Auftraege brauchen einen **sichtbaren Status-Header an erster Stelle** in mjolnir.md, sonst entstehen ueberschreibende Doppel-Submits ueber Mjoelnir-API. Status-im-Inhalt versteckt verlaesst sich auf Chris-Augen und ist nicht maschinell pruefbar. Plus: die WARNUNG-Zeile bei IN_ARBEIT/BLOCKIERT muss **fett** und als allererstes sichtbar sein, damit Chris sie im ZUSAMMENFASSUNG-Fetch nicht uebersieht.
+
+**Status-Updates parallel.** Commit Zerberus `7ba1262` + `20a5727`. `GLOBAL_LESSONS.md` (Claude-Repo) bekommt eine eigene Sektion „Multi-Session-Status-Header fuer mjolnir.md (2026-05-17, Zerberus B-mjolnir-multisession)". `lessons_ZERBERUS.md` mit dem Selbsttest-Phasen-Pattern erweitert.
+
+**Risiko und Rollback.** Null — reines Doku-Patch. Rollback: `git revert`, fertig. Falls Mjoelnir den QUEUED-Mechanismus nicht implementiert, ist das Datei-Rename idempotent (kein Konflikt durch falschen Auto-Sync).
+
+---
+
+## B-status-snapshot — STATUS_AKTUELL.md fuer Supervisor erstellt (2026-05-17)
+
+**Anlass.** Mjoelnir-Auftrag. Die Supervisor-Instanz (claude.ai-Chat) braucht alle paar Wochen einen kompakten Snapshot — was ist gerade live, was steht in der Pipeline, wo gibt es Inkonsistenzen. Vor B-status-snapshot war Coda's Antwort auf „wie ist der Stand?" eine 5-Minuten-Tour durch HANDOVER + SUPERVISOR + BACKLOG. Neuer Plan: ein dedizierter Status-Snapshot im Ratatoskr-Repo, ueberschreibbar von jeder Coda-Session, leicht via `web_fetch` lesbar.
+
+**Edits.**
+
+- **Neuer File `Ratatoskr/STATUS_AKTUELL.md`** (220 Zeilen, 9 Sektionen). Spec-konform Single-Source-of-Truth, keine Duplikate aus HANDOVER. Sektionen: (1) Patch- und Branch-Stand, (2) Was in Phase 5a tatsaechlich gelandet ist, (3) Test-Stand, (4) VRAM-Tetris (RTX 3060 12 GB), (5) Phase 5b — was hast du als naechstes geplant?, (6) Offene Bugs / Dauerbrenner, (7) Erledigt seit letztem Supervisor-Update, (8) Inkonsistenzen, (9) Doku-Sync-Status. Sektion 8 (Inkonsistenzen) enthaelt die 6 Punkte, die genau diese Aufraeum-Session (B-aufraeumen, 2026-05-18) aufgegriffen hat: SUPERVISOR + PROJEKTDOKU stehen auf P-mjolnir-workflow waehrend HANDOVER + Git auf B-mjolnir-multisession; BACKLOG-Header auf Patch 182; Ratatoskr README-Schlusszeile auf Patch 100; `huginn_kennt_zerberus.md` Stand-Anker auf P-mjolnir-workflow; WhatsApp-Modul-Status nicht verifiziert; Llama-Guard-Historie nicht verifiziert; Lessons-Cron-Status nicht verifiziert; `DECISIONS.md`-Datei nicht im Repo.
+
+**Tests.** Keine — Doku-Patch. Datei wird durch Source-Audit beim naechsten Status-Snapshot-Update verifiziert (Zeilen-Anzahl, Sektions-Heuristik).
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Ein dedizierter Status-Snapshot pro Repo (`STATUS_AKTUELL.md`) macht Supervisor-Sync wesentlich billiger als alles aus HANDOVER zu destillieren. Pattern: 9 Sektionen, Format unveraendert von Session zu Session — Supervisor weiss wo welche Info steht. Plus Sektion 8 „Inkonsistenzen" als Selbstauskunft — die Inkonsistenzen-Sektion ist effektiv ein Auftrag-Generator fuer die naechste Aufraeum-Session.
+
+**Status-Updates parallel.** Ratatoskr-Commit `67e50e5` auf main gepusht. Zerberus-Commit `cd1073b` (HANDOVER mit Verweis auf STATUS_AKTUELL.md). `verify_sync.ps1` gruen nach beiden Commits.
+
+---
+
+## B-status-snapshot Sync-Diagnose — Fall E (kein Sync-Fehler) (2026-05-17)
+
+**Anlass.** Folge zu B-status-snapshot. Supervisor (`web_fetch`) meldete `STATUS_AKTUELL.md` sei nicht auf Ratatoskr-main, obwohl Coda-mjolnir.md „Push erfolgreich, Commit 67e50e5" sagte. Verdacht: Sync-Fehler — Datei lokal vorhanden aber nicht remote.
+
+**Diagnose entlang der Sechs-Punkte-Liste aus dem FEATURE_REQUEST.**
+
+- (a) `Test-Path "C:\Users\chris\Python\Rosa\Nala_Rosa\Ratatoskr\STATUS_AKTUELL.md"` → **True**. Dateigroesse 16294 Byte.
+- (b) `git log --oneline -5` im Ratatoskr → Commit `67e50e5` als HEAD ✅
+- (c) `git status` im Ratatoskr → working tree clean ✅
+- (d) `git remote -v` im Ratatoskr → `origin → https://github.com/Bmad82/Ratatoskr.git` ✅
+- (e) `git log origin/main..HEAD --oneline` → 0 unpushed Commits ✅
+- (f) Zerberus-Repo-Cross-Check: STATUS_AKTUELL.md liegt nicht in `C:\Users\chris\Python\Zerberus` und nicht in Alt-Pfad — korrekt nur in Ratatoskr.
+
+**Verifikation (Pflicht).**
+
+- `git ls-tree origin/main --name-only` im Ratatoskr-Repo → 10 Top-Level-Eintraege, `STATUS_AKTUELL.md` enthalten ✅
+- `verify_sync.ps1` gruen auf Ratatoskr (clean + 0 unpushed). Zerberus zeigt dirty wegen `FEATURE_REQUEST_ZERBERUS.md` (untracked, dieser Auftrag selbst) — wird durch nachfolgenden Commit+Push bereinigt.
+- HTTP-HEAD auf `https://github.com/Bmad82/Ratatoskr/blob/main/STATUS_AKTUELL.md` → **200 OK** ✅
+- HTTP-HEAD auf `raw.githubusercontent.com/Bmad82/Ratatoskr/main/STATUS_AKTUELL.md` → **200 OK, Content-Length 16294 Byte** (matched lokale Dateigroesse byte-genau) ✅
+
+**Befund: Fall E (kein Sync-Fehler).** Datei seit B-status-snapshot durchgehend live auf GitHub. Supervisor-Befund war veraltet/cached. Interpretation: Caching-Delay zwischen `git push` und GitHub-Web-UI / `web_fetch`-CDN. Kein Patch-Fehler.
+
+**Edits.**
+
+- `HANDOVER_ZERBERUS.md` mit Commit-Hashes `f0173dc` + `3b3741b` + verify-gruen-Status erweitert.
+- `.gitignore` um `legacy/alte Datenbanken/` erweitert (Commit `3b3741b`) — Vorbereitung fuer B-db-merge, lokales DB-Aufraeum-Verzeichnis soll nicht ins Repo.
+
+**Tests.** Keine — Diagnose-Patch.
+
+**Logging.** Keiner — kein Code-Pfad.
+
+**Lessons (1).** Supervisor-`web_fetch` kann gecached / veraltet sein. Bei „Datei fehlt"-Befunden vom Supervisor erst die drei Pflicht-Checks (`git ls-tree origin/main`, `verify_sync.ps1`, `Invoke-WebRequest -Method Head`) durchziehen statt blind zu re-pushen — `git push` auf eine bereits gepushte Datei kann zu Fast-Forward-Konflikten oder Caching-Verstaerkung fuehren. Drei-Quellen-Verifikation (lokal + git-tree + HTTP-HEAD) ist robuster.
+
+**Status-Updates parallel.** Commit Zerberus `f0173dc` + `3b3741b` + `a51c62e` (HANDOVER-Nachtrag). Keine Ratatoskr-Commits in dieser Diagnose-Session (Datei war unveraendert).
+
+**Risiko und Rollback.** Null — Diagnose ohne Code-Aenderung. `.gitignore`-Erweiterung ist rein lokal.
+
+---
+
+## B-db-merge — bunker_memory.db Konsolidierungs-Vorgaenger (2026-05-17)
+
+**Anlass.** Mjoelnir-Auftrag (Prio 1, Housekeeping, mehrphasig). Drei Quell-DBs in `legacy/alte Datenbanken/` warten seit Wochen auf Konsolidierung in die produktive `bunker_memory.db` — `bunker_memory_backup_patch92.db` (3.74 MB, Apr 2026), `bunker_memory_backup_patch113a.db` (5.51 MB, Apr 2026), alt-uralt `bunker_memory.db` (224 KB, Feb 2026, 252 Rows, Alt-Schema ohne `session_id`/`profile_*`). Datenverlust-Toleranz null. Risiko mittel.
+
+**Edits.**
+
+- **Neue Tool-Suite `tools/db_merge_*.py`.** Fuenf Module: `db_merge_inspect.py` (read-only Phase-0/1 Inventar + Schema-Vergleich), `db_merge_backup.py` (online-safe `sqlite3.Connection.backup()` mit Page-Iterator + Sleep zwischen Pages), `db_merge_analyze.py` (Phase 1: Schema-Diff + Dedup-Schaetzung mit Sancho-Panza-Check), `db_merge_run.py` (Phase 2: transaktional BEGIN IMMEDIATE → Inserts → COMMIT, PK-Match + Content-Hash-Dedup), `db_merge_smoketest.py` (`PRAGMA integrity_check`, Schema-Diff Pre-/Post-Merge, Row-Count-Delta, FK-Konsistenz).
+- **`DB_MERGE_STATE.md`** (Repo-Root) — State-Tracker im Bibel-Format. Alle 7 Phasen (0_init bis 6_sync) mit Zeitstempel + Statistik + Inventar-Tabelle. Trennung in-scope (3 Quellen) vs out-of-scope (`nala_memory*.db` damals konservativ ausgelassen wegen Schema-Mismatch — folgt in B-db-finale).
+- **`docs/db_merge_analysis_2026-05-17T17-49.md`** — Phase-1-Analyse-Report. Schema-Drift erkannt: patch92 fehlt `profile_key`, legacy-uralt fehlt `session_id`+`profile_name`+`profile_key`. Dedup-Strategie pro Tabelle finalisiert (PK-Match + Content-Hash ueber `(session_id, timestamp, role, content)` fuer interactions, `message_id` fuer message_metrics, `(session_id, message_id, model, timestamp)` fuer costs). `alembic_version` + `schema_version` als Migration-State-Tabellen explizit ausgeschlossen.
+- **Pre-Merge-Backup** `legacy/alte Datenbanken/bunker_memory_pre_merge_2026-05-17T17-49.db` (11.55 MB, byte-genaues Online-Backup via `sqlite3.Connection.backup()`).
+
+**DB-Operationen (selbst durchgefuehrt, OBERSTES GEBOT konform).**
+
+1. Service-Stopp via `taskkill /F /T /PID 63068` (uvicorn.exe + child-tree).
+2. Sequentieller Merge pro Quell-DB:
+   - **patch92:** interactions seen=4663, inserted=24, skipped_pk_exact_dup=4639, skipped_hash_dup=0. message_metrics +24. costs seen=44, alle als Duplikate erkannt. COMMITTED.
+   - **patch113a:** interactions seen=6311, inserted=11, skipped_hash_dup=24 (die 24 von patch92 waren bereits drin → korrekt dedupt). message_metrics +11. costs alle Duplikate. COMMITTED.
+   - **legacy-uralt:** interactions seen=252, inserted=252 (alle mit Auto-ID, 250 davon hatten PK-Konflikt aber Content unterschiedlich — IDs in Ziel-DB laengst fuer andere Inhalte recycled, konservativ alle aufgenommen). COMMITTED.
+   - **Total neu:** 287 interactions, 35 message_metrics, 0 costs.
+3. Service wieder hoch via uvicorn aus bash mit `unset PROJECTS` (Pydantic-Settings-Konflikt: bash setzt multi-line `PROJECTS`-env-var, pydantic-settings versucht das als `projects`-Pydantic-Feld zu parsen und kracht mit `SettingsError`. Fix: `unset PROJECTS` vor uvicorn-Start in bash. Standard-Start via `start.bat` aus cmd ist nicht betroffen).
+4. Smoke-Test rc=0 — `PRAGMA integrity_check = ok`, Schema byte-genau identisch zu Pre-Merge-Backup, FK-Konsistenz unveraendert (35 pre-existing Orphans, keine neuen durch Merge), API-Health-Check `/health` alle Module ok, `rag_available=true`.
+
+**Akzeptanzkriterien-Check (alle 8 erfuellt).**
+
+- ✅ `bunker_memory.db` im Root enthaelt alle nicht-duplikativen Rows aller alten DBs (+287 interactions, +35 message_metrics)
+- ✅ Pre-Merge-Backup vorhanden in `legacy/alte Datenbanken/bunker_memory_pre_merge_2026-05-17T17-49.db`
+- ✅ Beide ehemaligen Root-Backups jetzt in `legacy/alte Datenbanken/`
+- ✅ Analyse-Report unter `docs/db_merge_analysis_2026-05-17T17-49.md`
+- ✅ State-Tracker `DB_MERGE_STATE.md` mit allen Phasen done
+- ✅ FK-Konsistenz unveraendert (35 Pre-Orphans = 35 Post-Orphans)
+- ✅ Service nach Merge wieder live (`/health` gruen)
+- ✅ KEINE `.db` geloescht
+
+**Tests.** Tool-internes Source-Audit via Smoke-Test rc=0. Keine neuen Unit-Tests (Tools sind one-shot Operations-Scripts, nicht produktiver Code).
+
+**Logging.** Tool-Scripts loggen Phasenfortschritt + Statistik pro Quell-DB direkt nach stdout (kein Logging-Framework). Smoke-Test-Output in `DB_MERGE_STATE.md` Phase 3 archiviert.
+
+**Lessons (4).**
+
+1. **PK-Match alleine UNSICHER bei Snapshot-Merges** — Quell-DB-Snapshots aus verschiedenen Patch-Zeitpunkten haben oft recycled PKs (alte ID wird in der neuen Lineage fuer anderen Content vergeben). Dedup muss `(PK-Match UND Content-Hash-Match)` sein, nicht `PK-Match OR`. Bei Conflict (PK-Match aber Content-different): Auto-ID-Insert konservativ aufnehmen.
+2. **Quell-Snapshots oft kumulativ** — patch113a war Superset von patch92 (interactions: 4663 + 1648 neue = 6311). Sequenzielle Merge in Order alt-zu-neu dedupt automatisch korrekt zwischen den Quellen (24 patch92-Eintraege landen erst, dann werden 24 von patch113a-Inserts als Duplikate skipped). Reihenfolge spielt nicht weh wenn die Dedup-Hierarchie konsistent ist.
+3. **`unset PROJECTS` vor uvicorn-Start aus bash-Session noetig** (siehe oben — Pydantic-Settings-Konflikt). Standard-Start via `start.bat` aus cmd nicht betroffen.
+4. **Mapping `src_id → new_id` tracken fuer FK-Tabellen** — message_metrics referenziert interactions.id. Wenn interactions mit Auto-ID inserted werden (PK-Konflikt-Fall), muss die FK in message_metrics auf die neue ID gemappt werden, nicht die src-ID. `id_map`-Dict in der Merge-Run-Funktion ist Pflicht-Datenstruktur.
+
+**Status-Updates parallel.** Commit Zerberus `5e3e17c` (Merge-Run) + `21a6a66` (DB_MERGE_STATE.md final). `lessons_ZERBERUS.md` Datenbank-Block um vier Pipe-Zeilen erweitert. **`DECISIONS.md` existiert im Repo nicht** (Spec im FEATURE_REQUEST war optimistisch). Audit-Spur stattdessen in `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` (Mjoelnir-Konvention).
+
+**Risiko und Rollback.** Mittel. Rollback: Pre-Merge-Backup `legacy/alte Datenbanken/bunker_memory_pre_merge_2026-05-17T17-49.db` zurueck-kopieren ueber `bunker_memory.db`, Service-Restart. Keine schwer-reverible Aenderung.
+
+---
+
+## B-db-finale — DB-Konsolidierungs-Finale, alles in bunker_memory.db (2026-05-17)
+
+**Anlass.** Folge-Auftrag zu B-db-merge. Die drei `nala_memory*.db` (`nala_memory.db`, `nala_memory (2).db`, `nala_memory (3).db`) aus der Whisper-Weichen-Lineage wurden in B-db-merge als out-of-scope klassifiziert wegen damals fehlendem Schema-Mismatch-Handling. FEATURE_REQUEST: Tools aus B-db-merge wiederverwenden + minimal erweitern (keine neue Tool-Suite), alle lesbaren `.db` nach `bunker_memory.db` ueberfuehren, unreadable still ueberspringen, Schema-Mismatch konservativ handhaben, keine Datei loeschen. Risiko mittel, Datenverlust-Toleranz null.
+
+**Edits.**
+
+- **`tools/db_merge_analyze.py`** — `unreadable`-Klassifikation via try/except auf `sqlite3.connect` + erstes SELECT (FEATURE_REQUEST-Anforderung). Neue render-Branch fuer `unreadable`-Markierung im Report.
+- **`tools/db_merge_run.py`** — neue Funktion `merge_generic_table(src_conn, dst_conn, table_name, ...)` fuer unbekannte Tabellen (Schema-Mismatch-Fall 3 aus FEATURE_REQUEST): dynamisches `CREATE TABLE IF NOT EXISTS` aus src-DDL via `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`. Content-Hash-Dedup ueber alle Nicht-id-Spalten. Plus `unreadable`-Skip-Branch in `merge_db()` (wenn die Analyse die DB als unreadable klassifiziert hat).
+- **`tools/db_merge_smoketest.py`** — `--dst`/`--pre` als CLI-Argumente (Pfad-Parametrisierung statt hardcoded `bunker_memory.db` + Pre-Backup-Pfad). Neue NEW-table-Branch im Schema-Drift-Check (Tabellen die in pre nicht existierten gelten nicht als DRIFT, sondern als „neu durch Merge erwartet").
+- **`DB_FINALE_STATE.md`** (Repo-Root) — State-Tracker im Bibel-Format, alle 7 Phasen mit Zeitstempel + Statistik + Inventar-Tabelle (in-scope + out-of-scope-Klassifikation + Schema-Drift-Uebersicht + Dedup-Strategie).
+- **`docs/db_finale_analysis_2026-05-17T21-41.md`** — Phase-1-Analyse-Report mit Inventar-Tabelle (30+ `.db` im Repo gefunden), Sampling-Check der Pre-Dedup-Backups, Schema-Diff der 3 nala-DBs, Erwartungs-Block, Sancho-Panza-Check.
+- **`lessons_ZERBERUS.md`** — 2 neue Pipe-Zeilen unter Datenbank-Block (Schema-Mismatch mit NULL-Fill + dynamisches CREATE-TABLE; Pre-Dedup-Backups per Konstruktion redundant + Sampling-Check-Pattern).
+
+**DB-Operationen (selbst durchgefuehrt, OBERSTES GEBOT konform).**
+
+1. **Phase 0:** Pre-Finale-Backup `legacy/alte Datenbanken/bunker_memory_pre_finale_2026-05-17T21-41.db` (11.91 MB, online-safe via `sqlite3.Connection.backup()` waehrend Service noch lief).
+2. **Phase 1:** Inventar **aller 30+ `.db`** im Repo mit Klassifikation (3 in-scope-nala + 3 bereits-in-B-db-merge-gemerged + 2 Pre-Backup-Snapshots + 23 taegliche Pre-Dedup-Backups + ~32 identische Worktree-Stubs). Sampling-Check mit 3 Stichproben (aeltester/mittlerer/neuester Pre-Dedup) bestaetigt: alle Backups sind Subset der Live-DB-Lineage. Keine `unreadable` Dateien gefunden.
+3. **Phase 2:** Service-Stopp via `taskkill /F /T` auf 3 Root-PIDs (28116 + 139476 + 143448, beide laufenden uvicorn-Trees auf Port 5000 + Worker mit DB-Connection sauber beendet). Sequentieller Merge:
+   - **nala_memory.db:** +180 interactions (178 PK-collision-auto-id), +136 message_metrics, **+2 protokoll (NEUE Tabelle in Ziel-DB angelegt mit src-CREATE-SQL — Schema-Mismatch-Fall 3).**
+   - **nala_memory (2).db:** +0 (komplett Subset von .db).
+   - **nala_memory (3).db:** +22 interactions, +22 message_metrics.
+   - **Total: +208 interactions** (12855 → 13060), **+158 message_metrics** (12638 → 12799 incl. 3 Live-Service-Inserts in der ~10min-Luecke vor Service-Stop), **+0 costs**, **+2 protokoll**.
+4. **Phase 3:** Smoke-Test rc=0 — `PRAGMA integrity_check = ok`, Schema byte-genau identisch zu Pre-Finale-Backup (protokoll als NEW gekennzeichnet, kein DRIFT), Row-Count-Delta exakt erklaerbar. **FK-Konsistenz: 35 Pre-Orphans = 35 Post-Orphans** — keine neuen Orphans durch Merge (id_map-FK-Mapping greift sauber).
+5. **Phase 4:** Doku (lessons, _ERLEDIGT, HANDOVER, mjolnir, DB_FINALE_STATE).
+6. **Phase 5:** Quell-DBs byte+mtime-identisch zu Phase 0 verifiziert. Pre-Finale-Backup vorhanden. Service hochgefahren (neuer Reloader-PID 143144, `unset PROJECTS` aus B-db-merge-Lesson erneut benutzt, `/health` alle Module ok). **Keine `.db` geloescht.**
+7. **Phase 6:** sync_repos + verify_sync + Commit + Push.
+
+**Akzeptanzkriterien-Check (alle 8 erfuellt).**
+
+- ✅ Alle lesbaren `nala_memory*.db` nach `bunker_memory.db` gemerged
+- ✅ Pre-Finale-Backup vorhanden
+- ✅ Schema-Mismatch konservativ gehandhabt (fehlende Spalten → NULL, neue Tabellen → mit src-Schema angelegt)
+- ✅ State-Tracker `DB_FINALE_STATE.md` alle Phasen done
+- ✅ Smoke-Test rc=0, Schema byte-identisch bis auf NEW-Tabelle `protokoll`
+- ✅ FK-Konsistenz: 35 Pre-Orphans = 35 Post-Orphans
+- ✅ Service nach Merge wieder live (`/health` gruen)
+- ✅ KEINE `.db` geloescht
+
+**Tests.** Tool-Patches via Source-Audit verifiziert (`merge_generic_table` neue Function, `--dst`/`--pre` CLI-Args parsed). Keine neuen Unit-Tests (Tools sind one-shot Operations-Scripts).
+
+**Logging.** Phase-Fortschritt nach stdout, Statistik pro Quell-DB. Smoke-Test-Output in `DB_FINALE_STATE.md` Phase 3 archiviert.
+
+**Lessons (2).**
+
+1. **Schema-Mismatch-Handling im DB-Merge-Toolset** — Bei Snapshot-Merges aus fremden Lineages treten drei Schema-Mismatch-Faelle auf: (a) Tabelle in dst+src mit Spalten-Drift → fehlende src-Spalten beim Insert auf NULL via `row_dict.get(c)`, extra src-Spalten weglassen + im Report dokumentieren; (b) Tabelle nur in src → dynamisches `CREATE TABLE` in dst aus `sqlite_master.sql`, dann generischer Content-Hash-Merge; (c) Typ-Drift → konservativ skippen. Implementiert in `merge_generic_table()`. Wiederverwendbar fuer kuenftige Snapshot-Migrationen ohne weitere Tool-Erweiterung.
+2. **Pre-Dedup-Backups als Out-of-Scope per Konstruktion** — Taegliche `backups/bunker_memory_pre_dedup_*.db` (23 Stueck) plus Worktree-Stubs (~32 Stueck) sind per Konstruktion Subsets der Live-DB-Lineage (Snapshots unmittelbar vor dem naechtlichen Dedup-Cron der gegen die Live-DB laeuft). Bei DB-Inventur Out-of-Scope-Klassifikation gerechtfertigt durch Sampling-Check (3 Stichproben: aeltester/mittlerer/neuester, Schema-Subset + Row-Count ≤ Live bestaetigt). Spart Zeit + macht Report fokussiert auf echte Mehrwert-Quellen.
+
+**Status-Updates parallel.** Commit Zerberus `b09c6df` (Merge-Run) + `a04dc8d` (State-File final mit Commit-Hashes nachgetragen). `_ERLEDIGT.md` akkumuliert. HANDOVER ueberschrieben. mjolnir.md neu geschrieben mit STATUS = FERTIG.
+
+**Risiko und Rollback.** Mittel. Rollback: Pre-Finale-Backup `legacy/alte Datenbanken/bunker_memory_pre_finale_2026-05-17T21-41.db` zurueck-kopieren ueber `bunker_memory.db`, Service-Restart. NEW-Tabelle `protokoll` wuerde dabei entfernt (kein Code-Pfad nutzt sie, harmlos).
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert. Service-Stopp + Service-Restart + Backup + Merge + Verify + Sync alles autonom.
+
+---
+
+*Stand: 2026-05-18, Patch B-aufraeumen — Doku-Catchup-Session ohne Code-Aenderung. Zehn Marathon-Auftraege aus dem Zeitraum 2026-05-16 bis 2026-05-17 retrospektiv in SUPERVISOR_ZERBERUS.md + docs/PROJEKTDOKUMENTATION.md eingetragen (B-061/P-umzug, B-072, B-mjolnir-fix, B-global-lessons, B-mjolnir-fix-2, B-mjolnir-multisession, B-status-snapshot, B-status-snapshot-Sync-Diagnose, B-db-merge, B-db-finale). Plus Stempel-Updates in BACKLOG-Header (Patch 182 → P217), Ratatoskr-README-Schlusszeile (Patch 100 → P217 + Phase 5a/5c abgeschlossen), huginn_kennt_zerberus-Stand-Anker (P-mjolnir-workflow → P217 mit Hinweis auf nachfolgende B-Auftraege). Plus vier Status-Klaerungen: WhatsApp-Modul existiert im Code (BACKLOG-Item fuer Entfernung neu angelegt), Llama Guard 3 8B war Konzept-Idee ohne Code-Spur (dokumentiert), Lessons-Cron-Job nicht eingerichtet (BACKLOG-Eintrag bestaetigt), DECISIONS_ZERBERUS.md nicht im Repo (Workflow-Frage in mjolnir.md parkiert). Kein Code-Patch, kein Test-Restart, keine Architektur-Aenderung — reine Doku-Konsistenz.*
+
