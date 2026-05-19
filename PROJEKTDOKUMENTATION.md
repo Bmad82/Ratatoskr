@@ -10096,5 +10096,86 @@ Relativer `consolidation_log`-Pfad wird neben `output_path` aufgeloest (typische
 
 ---
 
-*Stand: 2026-05-19, Patch B-074 — Phase 5b Prio 1 Lessons-Cron ERLEDIGT. APScheduler-Job 04:30 Europe/Berlin in-process (D-002 entschieden), Modul [`zerberus/modules/lessons_cron/runner.py`](../zerberus/modules/lessons_cron/runner.py), Pydantic-Klasse `LessonsCronConfig`, Lifespan-Hookup in `zerberus/main.py`, Config-Beispiel-Block. 50 Tests in [`test_b074_lessons_cron.py`](../zerberus/tests/test_b074_lessons_cron.py) gruen. B-073 Regression-Check 8/8 gruen. Naechster Phase-5b-Patch: Prio 2 = Debugging Console (Hel zeigt Live-Logs, Token-Verbrauch, RAG-Treffer).*
+## Patch Claude-Design-Export — Nala-Frontend-Analyse + design_export/ erstellt (2026-05-19)
+
+**Anlass.** FEATURE_REQUEST von Chris via Mjoelnir: Nala-Frontend-Dateien fuer Claude-Design-Tool identifizieren + ggf. in einen Unterordner extrahieren. Reine Analyse + Arbeitsordner-Anlage, kein Code-Patch.
+
+**Befund.** Nala-Frontend ist monolithisch — HTML/CSS/JS inline in [`zerberus/app/routers/nala.py`](../zerberus/app/routers/nala.py) (8.528 Zeilen). CSS-Block: Z. 121-2709 (~2.587 Zeilen). JS-Bloecke: Z. 2710-2901 + Z. 3402-7763 (~4.551 Zeilen). Externe Dateien: `static/css/shared-design.css` (Design-Tokens), `static/css/style.css` (Legacy), `static/js/audio.js`.
+
+**Ergebnis.** Lokaler Arbeitsordner `design_export/` im Repo-Root erstellt (via `.gitignore` ausgeschlossen): `styles/nala.css` (Extrakt), `styles/shared-design.css` + `style.css` (Kopien), `scripts/nala.js` (Extrakt), `scripts/audio.js` (Kopie), `assets/` (6 Dateien), `reference/nala.py` + `hel.py` + `DESIGN.md` + `NalaMockup.jsx` (Kopien), `design_export/README.md`. **Keine Source-Edits in `nala.py`**.
+
+**Status retrospektiv.** Wurde direkt von Patch Frontend-Separation (gleicher Tag) abgeloest — die Frontend-Separation hat das Inline-Frontend dauerhaft in `zerberus/static/` extrahiert. Der `design_export/`-Workaround wurde anschliessend geloescht und der `.gitignore`-Eintrag entfernt.
+
+---
+
+## Patch Frontend-Separation — nala.py inline-Monolith aufgeloest (2026-05-19)
+
+**Anlass.** FEATURE_REQUEST von Chris via Mjoelnir nach der Claude-Design-Export-Session: das `design_export/`-Workaround war nur ein temporaerer Arbeitsordner — der richtige Fix ist die Aufloesung des Inline-Monolithen am Quelltext, sodass das Frontend in `zerberus/static/` lebt wie es sich gehoert.
+
+**Architektur-Entscheidung — Variante B (Static Files).** Statt Variante A (Jinja2-Templates) wurde Variante B gewaehlt: NALA_HTML bleibt als Python-Triple-Quoted-String erhalten und referenziert die Statics via `<link rel="stylesheet" href="/static/css/nala.css">` + drei `<script src="/static/js/nala-*.js">`-Tags. Begruendung: (1) Refs auf Python-Variablen (`WORKSPACE_*`-Konstanten) im HTML-Template bleiben funktionsfaehig; (2) Static-Mount in `zerberus/main.py` (Z. 428) ist etabliert — `app.mount("/static", StaticFiles(directory="zerberus/static"))`; (3) Browser-Caching greift pro Asset (vorher: 8.5k-Zeilen-Re-Download pro Request); (4) IDE-Tooling (Linting, Prettier) funktioniert nativ; (5) Tests koennen Source-Markers weiterhin direkt pruefen.
+
+**Extraktion.**
+
+- Inline-CSS (~2.587 Zeilen) → [`zerberus/static/css/nala.css`](../zerberus/static/css/nala.css).
+- JS-Block 1 (Black-Bug-Sanitizer-IIFE, muss frueh laufen) → [`zerberus/static/js/nala-blackbug.js`](../zerberus/static/js/nala-blackbug.js) (im `<head>` geladen).
+- JS-Block 2 (Haupt-App-Logik) → [`zerberus/static/js/nala-main.js`](../zerberus/static/js/nala-main.js) (vor `</body>`).
+- JS-Block 3 (PWA-Service-Worker-Registrierung) → [`zerberus/static/js/nala-pwa-sw.js`](../zerberus/static/js/nala-pwa-sw.js) (vor `</body>`, separat aus PWA-Hygiene).
+
+**Resultat.** `nala.py` 8.528 → **1.381 Zeilen** (Reduktion: 83,8 %). Die Datei besteht nur noch aus FastAPI-Endpoints, Python-Logik und dem HTML-Template-String mit `<link>`/`<script src>`-Tags statt Inline-Bloecken.
+
+**Python-String-Literale → JS-Bytes.** Extrahiertes JS enthielt Backslash-Escapes die als Python-Source-Literale vorlagen (z.B. `\\s\\S` im Source-File = `\s\S` als decoded String fuer JS-Regex). Loesung: `ast.literal_eval()` auf den extrahierten Triple-Quoted-String — Python decodiert die Escapes korrekt, dann in die `.js`-Datei schreiben. Ohne diesen Schritt waren alle Regex-Literale falsch (`\\s` statt `\s`) und `node --check` brach ab. **Lesson:** Patterns wie `ast.literal_eval` sind das richtige Werkzeug fuer „Python-Source → externe Bytes"-Konvertierungen, nicht naives Slicing.
+
+**Test-Anpassung (Kern-Risiko des Patches).** 28 Source-Audit-Tests in 12 Files lasen `nala.py` direkt via `Path(NALA_PY).read_text()` und prueften Substrings (Marker-Tags, CSS-Klassen, JS-Funktionsnamen). Nach der Extraktion finden sie ihre Marker nicht mehr in `nala.py`. Loesung: gemeinsamer Helper [`zerberus/tests/_nala_source.py`](../zerberus/tests/_nala_source.py) mit drei Funktionen — `read_combined_nala_source()` konkateniert nala.py + alle 4 Statics zu einem einzigen String, `combine_endpoint_body_with_statics(body)` haengt die Statics an einen Endpoint-Response-Body fuer Smoke-Tests, `nala_js_paths()` liefert die drei JS-Files fuer `node --check`-Tests. Drei Migration-Patterns:
+
+1. **Fixture-Body-Swap** — `return Path(NALA_PY).read_text()` → `return read_combined_nala_source()`. Trifft auf alle reinen Source-Audit-Tests.
+2. **Endpoint+Statics-Combine** — fuer Smoke-Tests, die den Response-Body eines Endpoints holen und drin nach Markern suchen: `html = body + extras` → `html = combine_endpoint_body_with_statics(body)`.
+3. **Direkter Static-File-Read** — Tests, die einen Marker eindeutig im JS- oder CSS-Block pruefen, lesen direkt `NALA_CSS_PATH.read_text()` oder `NALA_JS_MAIN_PATH.read_text()`. Granularer und klarer als der Combined-Source-Swap.
+
+Plus: 4 `node --check`-Tests umgestellt — vorher extrahierten sie per Regex die `<script>`-Inhalte aus dem HTML-String und schrieben sie ins Tempfile, jetzt iterieren sie ueber `nala_js_paths()` und rufen Node direkt auf die `.js`-Files auf (sauberer + schneller).
+
+**Anti-Regress-Tests.** Neuer File [`zerberus/tests/test_frontend_separation.py`](../zerberus/tests/test_frontend_separation.py) mit **8 Tests in 3 Klassen**: `TestStaticDateienVorhanden` (4 Files exist + non-empty), `TestNalaHtmlReferenziertStatics` (3 — `<link>`-Tag fuer CSS, drei `<script src>`-Tags), `TestKeineInlineFrontendBlockeMehr` (3 — `<style>`-Tag fehlt, IIFE-Marker nicht inline, PWA-Marker nicht inline). Wenn jemand den Monolithen versehentlich wiederherstellt: rot.
+
+**Test-Ergebnis. 0 Regressions.** Baseline vor Extraktion: 44 Failures, 108 Errors (per `git stash` + Full-Pytest gemessen). Nach kompletter Migration: 42 Failures, 108 Errors — die 2 weniger Failures sind sogar zwei vorher schon kaputte Tests die nebenbei mit der Helper-Migration mitrepariert wurden. Per `comm -13 baseline.txt current.txt` verifiziert: **null neue Failures**. Voll-Lauf 4:27 min, kein Crash.
+
+**Phase 5 Cleanup.** `design_export/` (15 Dateien) per `rm -rf` geloescht — Workaround obsolet, das Frontend lebt jetzt sauber in `zerberus/static/`. `.gitignore`-Eintrag `design_export/` (plus Kommentar-Zeile `# Claude Design Arbeitsordner`) entfernt.
+
+**Stolpersteine retrospektiv.**
+
+1. `_find_sidebar_html_block` in `test_settings_umbau.py` nutzte als Anker den String `"Patch 142 (B-013)"` — der erscheint im kombinierten Source-String aber zuerst in einem HTML-Kommentar im Tab „System" (vor der Sidebar), nicht in der Sidebar selbst. Test schlug fehl weil der HTML-Block bis zum Sidebar-Start gestoppt wurde, statt von dort. **Fix:** Anker auf das eindeutige Sidebar-Tag `'<div class="sidebar" id="sidebar">'` umgestellt.
+2. `test_p209::test_nala_html_passes_node_check` extrahierte vorher `<script>` aus dem HTML-String und war damit baseline-broken (nach Refactor war kein passender `<script>`-Tag mehr da, der inline-Code enthielt). Umgestellt auf `nala_js_paths()`-Iteration mit `node --check` pro File — von rot zu gruen, kein Workaround.
+3. Python-String-Escapes vs JS-Regex-Literale (siehe oben) — der Fall war ueberhaupt nicht offensichtlich, der `node --check`-Run hat ihn als Erstes aufgedeckt.
+
+**Edits.**
+
+- **`zerberus/app/routers/nala.py`** — 8.528 → 1.381 Zeilen.
+- **`zerberus/static/css/nala.css`** — NEU, 2.587 Zeilen.
+- **`zerberus/static/js/nala-blackbug.js`** — NEU.
+- **`zerberus/static/js/nala-main.js`** — NEU.
+- **`zerberus/static/js/nala-pwa-sw.js`** — NEU.
+- **`zerberus/tests/_nala_source.py`** — NEU, gemeinsamer Helper.
+- **`zerberus/tests/test_frontend_separation.py`** — NEU, 8 Anti-Regress-Tests.
+- **12 bestehende Test-Files migriert** — test_p206 / p207 / p208 / p209 / p_ui_3 / p_ui_4 / p_ui_5 / p_ui_polish_2 / p_ui_11 / p_ui_hel_split / prosody_consent / settings_umbau / p203d3.
+- **`design_export/`** — GELOESCHT (15 Dateien).
+- **`.gitignore`** — `design_export/`-Eintrag + Kommentar geloescht.
+- **`SUPERVISOR_ZERBERUS.md`** — Header + neue Sektion.
+- **`docs/PROJEKTDOKUMENTATION.md`** (diese Datei) — dieser Eintrag.
+- **`README.md`** — Frontend-Architektur-Hinweis aktualisiert.
+- **`docs/huginn_kennt_zerberus.md`** (+ Mirror in `Ratatoskr/`) — Stand-Anker.
+- **`lessons_ZERBERUS.md`** — zwei neue Lessons (Inline-Monolith-Anti-Pattern, Python-String-Literale → JS-Bytes).
+- **`BACKLOG_ZERBERUS.md`** — Frontend-Separation als ERLEDIGT vermerkt.
+- **`HANDOVER_ZERBERUS.md`** — neu geschrieben.
+- **`mjolnir.md`** — STATUS=FERTIG.
+- **`FEATURE_REQUEST_ZERBERUS.md`** — umbenannt zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` mit Audit-Anhang.
+
+**Was diese Session NICHT gemacht hat.** Hel-Modul (`zerberus/app/routers/hel.py`) bleibt vorerst inline — Phase 4 des FEATURE_REQUEST war als optional markiert und der Time-Budget-Spielraum war durch die 12-Datei-Test-Migration aufgebraucht. BACKLOG-Eintrag fuer Hel-Separation als Nachfolge-Patch ergaenzt. Keine Funktionalitaet im Nala-Frontend veraendert — reine Architektur-Aenderung; UI sieht identisch aus, Tests bestaetigen Verhalten unveraendert.
+
+**Risiko und Rollback.** Mittel beim Test-Suite-Eingriff (12 Files migriert), aber sauber verifiziert via Baseline-Diff. Rollback: `git revert <commit>` stellt Inline-Monolith wieder her — die Tests greifen dann wieder auf `nala.py` direkt. Die neuen Static-Files wuerden weiter existieren, aber unbenutzt; `git rm zerberus/static/{css/nala.css,js/nala-*.js}` saeubert. Der Anti-Regress-Test in `test_frontend_separation.py` macht versehentliches Inline-Wiederherstellen sofort sichtbar.
+
+**Lessons.** Zwei neue universelle Lessons in `lessons_ZERBERUS.md`: (1) **Inline-Monolith-Anti-Pattern** — HTML/CSS/JS gehoeren in Static-Files, FastAPI-Router sollten nur das HTML-Template + Routing enthalten; (2) **Python-String-Literale → JS-Bytes via AST** — wenn man Python-Source-Strings als externe `.js`/`.css`-Bytes extrahiert, decodiert `ast.literal_eval()` die Escapes korrekt; naives Slicing fuehrt zu kaputten Regex-Literalen.
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert — Extraktion, Tests, Doku, Commit, Push, Sync alles autonom.
+
+---
+
+*Stand: 2026-05-19, Patch Frontend-Separation — `nala.py` 8.528 → 1.381 Zeilen. Inline-CSS + 3 JS-Bloecke extrahiert nach `zerberus/static/css/nala.css` + `zerberus/static/js/nala-*.js`. NALA_HTML referenziert die Statics. 28 Source-Audit-Tests via gemeinsamem Helper `_nala_source.py` migriert; 4 `node --check`-Tests auf Static-Files umgestellt; 8 Anti-Regress-Tests in `test_frontend_separation.py`. **0 Regressions** im Test-Suite (Baseline 44 → 42 Failures, 108 Errors → 108 Errors, alle pre-existing). `design_export/` Workaround geloescht + `.gitignore`-Eintrag entfernt. Hel-Modul bleibt vorerst inline (BACKLOG-Eintrag fuer Nachfolge-Patch).*
 
