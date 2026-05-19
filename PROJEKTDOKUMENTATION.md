@@ -9934,3 +9934,51 @@ Wenn der Kurzname im neuen FEATURE_REQUEST uebereinstimmt: kein Konflikt, Chris 
 
 *Stand: 2026-05-18, Patch B-aufraeumen — Doku-Catchup-Session ohne Code-Aenderung. Zehn Marathon-Auftraege aus dem Zeitraum 2026-05-16 bis 2026-05-17 retrospektiv in SUPERVISOR_ZERBERUS.md + docs/PROJEKTDOKUMENTATION.md eingetragen (B-061/P-umzug, B-072, B-mjolnir-fix, B-global-lessons, B-mjolnir-fix-2, B-mjolnir-multisession, B-status-snapshot, B-status-snapshot-Sync-Diagnose, B-db-merge, B-db-finale). Plus Stempel-Updates in BACKLOG-Header (Patch 182 → P217), Ratatoskr-README-Schlusszeile (Patch 100 → P217 + Phase 5a/5c abgeschlossen), huginn_kennt_zerberus-Stand-Anker (P-mjolnir-workflow → P217 mit Hinweis auf nachfolgende B-Auftraege). Plus vier Status-Klaerungen: WhatsApp-Modul existiert im Code (BACKLOG-Item fuer Entfernung neu angelegt), Llama Guard 3 8B war Konzept-Idee ohne Code-Spur (dokumentiert), Lessons-Cron-Job nicht eingerichtet (BACKLOG-Eintrag bestaetigt), DECISIONS_ZERBERUS.md nicht im Repo (Workflow-Frage in mjolnir.md parkiert). Kein Code-Patch, kein Test-Restart, keine Architektur-Aenderung — reine Doku-Konsistenz.*
 
+---
+
+## Patch B-decisions-init — Phase 5b Vorbereitung + Haushalts-Auftrag (2026-05-19)
+
+**Anlass.** FEATURE_REQUEST_ZERBERUS.md (Supervisor-Session 2026-05-19) — Planungs- + Haushalts-Session. Phase 5b hatte keine Zieltabelle in `MARATHON_WORKFLOW_ZERBERUS.md` — ohne die kann keine Coda-Session sinnvoll mit "Go" loslegen. Plus drei kleine Haushalts-Punkte aus dem Stand-Inkonsistenzen-Befund von B-aufraeumen: WhatsApp-Modul-Status verifizieren (B-073), DECISIONS_ZERBERUS.md anlegen, Phase-5b-Zieltabelle.
+
+**Block A — WhatsApp-Modul entfernen (B-073 ERLEDIGT).** `git log --all -- zerberus/modules/whatsapp/` zeigte nur `b4a95d3 Initial commit` — Modul war von Anfang an im Repo (Twilio-Webhook-Stub `router.py` mit `enabled`-Default-False-Check, `__init__.py` als Paket-Marker), nie produktiv genutzt, Twilio-Dep auch nie installiert (Default-Branch ist `TWILIO_AVAILABLE=False`). Modul vollstaendig entfernt: (a) Verzeichnis `zerberus/modules/whatsapp/` geloescht via `rm -rf`. (b) [`zerberus/app/routers/orchestrator.py`](zerberus/app/routers/orchestrator.py): `_HITL_PROTECTED_CHANNELS` von `{"telegram", "whatsapp"}` auf `{"telegram"}` reduziert, Kommentar Z. 156-160 aktualisiert (B-073-Marker-Kommentar), Kommentar Z. 449 aktualisiert (Telegram statt Telegram/WhatsApp). (c) [`zerberus/app/routers/legacy.py`](zerberus/app/routers/legacy.py): Kommentar Z. 453-454 erwaehnt nur noch Telegram, "channel=telegram/whatsapp" auf "channel=telegram" reduziert. (d) [`zerberus/static/index.html`](zerberus/static/index.html): `<li>whatsapp – WhatsApp Bridge</li>` aus Modul-Listing entfernt. (e) [`config.yaml.example`](config.yaml.example): `whatsapp:`-Sektion (5 Zeilen mit account_sid/auth_token/phone_number/enabled-Default-False) komplett raus. (f) [`requirements.txt`](requirements.txt): `twilio==8.10.0` plus Kommentar-Zeile raus.
+
+**Block B — DECISIONS_ZERBERUS.md angelegt.** Neue Datei im Repo-Root mit Header + Format-Beschreibung + drei initialen Eintraegen. **D-001:** WhatsApp-Modul entfernen — ERLEDIGT via Block A (2026-05-19). **D-002:** Lessons-Cron-Architektur (APScheduler-Job im Zerberus-Prozess vs. separates Python-Script unter Windows Task Scheduler) — OFFEN, Chris entscheidet; Spec-Pattern kennt sowohl APScheduler (in-process, einfacher Reload, aber Zerberus-Service-Down ist Cron-Down) als auch Task-Scheduler (separates Skript, OS-level Persistenz, aber doppelter Python-Boot-Overhead). **D-003:** MANUELLE_TESTS_CHECKLISTE.md noch aktuell — OFFEN, Chris arbeitet ab (Touch-Tests, Browser-Rendering, echte Gerät-Tests die Coda nicht ausfuehren kann). Pflege-Regel dokumentiert: fortlaufende D-ID, Status-Werte OFFEN / ERLEDIGT — <wie/wann> / OBSOLET — <warum>, Zeile bei Erledigung nie loeschen (Audit-Trail). `MARATHON_WORKFLOW_ZERBERUS.md` Doku-Pflicht-Tabelle um Pflicht-Eintrag fuer DECISIONS_ZERBERUS.md erweitert (zwischen FEATURE_REQUEST_ZERBERUS_QUEUED.md und "Diese Datei").
+
+**Block C — Phase 5b Zieltabelle angelegt.** Neue Sektion `## Phase 5b — Power-Features` in `MARATHON_WORKFLOW_ZERBERUS.md` direkt nach dem Phase-5c-Block (nach den Nicht-funktionalen Anforderungen, vor "Vorhandene Bausteine"). Acht Features als GEPLANT: (1) Multi-LLM Evaluation — zwei LLM-Antworten parallel, Nala zeigt Vergleich; (2) Bugfix-Workflow + Test-Agents per Projekt — Loki/Fenrir/Vidar isoliert pro Nala-Projekt; (3) Multi-Agent Orchestration — mehrere Coda-Instanzen / Sub-Agenten koordiniert; (4) Debugging Console — Hel zeigt Live-Logs, Token-Verbrauch, RAG-Treffer; (5) Reasoning Modes — User waehlt schnell/standard/deep (Pre-Call-Heuristik + Override, baut auf P-UI-11-Mapping auf); (6) Cost Transparency — Token-Kosten pro Konversation sichtbar in Nala/Hel; (7) Agent Observability — Hel zeigt Agenten-Schritte, Tool-Calls, Timing; (8) Lessons-Cron (B-074) — Nightly-Job lessons_{P}.md → GLOBAL_LESSONS.md via DeepSeek, markiert als blockiert durch D-002. Reihenfolge offen — Chris priorisiert per Mjölnir-Kanal oder naechster Supervisor-Session.
+
+**Block D — Lessons-Cron (B-074) nicht implementiert.** Wie im FEATURE_REQUEST explizit gefordert: D-002 wartet auf Chris' Architektur-Entscheidung. In dieser Session nur dokumentiert (Block B + Phase-5b-Tabelle in Block C), kein Code-Patch.
+
+**Edits.**
+
+- **`zerberus/modules/whatsapp/`** — Verzeichnis geloescht (router.py + __init__.py).
+- **`zerberus/app/routers/orchestrator.py`** — zwei Kommentar-Bloecke aktualisiert (Z. 156-160, Z. 449), `_HITL_PROTECTED_CHANNELS` von `{"telegram", "whatsapp"}` auf `{"telegram"}`.
+- **`zerberus/app/routers/legacy.py`** — Kommentar Z. 453-454 erwaehnt nur Telegram.
+- **`zerberus/static/index.html`** — `<li>whatsapp – WhatsApp Bridge</li>` entfernt.
+- **`config.yaml.example`** — `whatsapp:`-Sektion (5 Zeilen plus 2 Kommentar-Zeilen) raus.
+- **`requirements.txt`** — `twilio==8.10.0` plus Kommentar-Zeile raus.
+- **`zerberus/tests/test_b073_whatsapp_removed.py`** — NEU, 8 Source-Audit-Tests in 6 Klassen (siehe Tests-Block).
+- **`DECISIONS_ZERBERUS.md`** (Repo-Root) — NEU, Header + Format-Beschreibung + drei Eintraege (D-001/D-002/D-003) + Pflege-Regel.
+- **`MARATHON_WORKFLOW_ZERBERUS.md`** — (a) Doku-Pflicht-Tabelle um DECISIONS_ZERBERUS.md-Eintrag erweitert; (b) neue Sektion `## Phase 5b — Power-Features` mit 8-Feature-Tabelle und Naechster-Schritt-Hinweis.
+- **`BACKLOG_ZERBERUS.md`** — Header-Stempel um B-decisions-init-Hinweis erweitert, B-073 auf ERLEDIGT mit Detail-Beschreibung, B-074 mit D-002-Verweis und Phase-5b-Querverweis.
+- **`SUPERVISOR_ZERBERUS.md`** — Header umgeschrieben (Letzte Aktualisierung: B-decisions-init), neue Sektion `## B-decisions-init (2026-05-19) — Phase 5b Vorbereitung + Haushalts-Auftrag (3 Blocks)` als erste Inhaltssektion.
+- **`docs/PROJEKTDOKUMENTATION.md`** (diese Datei) — Bibel-Eintrag dieses Patches angehaengt.
+- **`HANDOVER_ZERBERUS.md`** — neu geschrieben (siehe HANDOVER unten).
+- **`mjolnir.md`** — neu geschrieben mit STATUS = FERTIG.
+- **`FEATURE_REQUEST_ZERBERUS.md`** — umbenannt zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` mit angehaengter Audit-Sektion.
+
+**Tests.** Neuer File [`zerberus/tests/test_b073_whatsapp_removed.py`](zerberus/tests/test_b073_whatsapp_removed.py) mit **8 Source-Audit-Tests** in 6 Klassen: `TestWhatsappModulEntfernt` (2 — Verzeichnis und router.py existieren nicht), `TestHitlProtectedChannelsOhneWhatsapp` (2 — `_HITL_PROTECTED_CHANNELS` enthaelt "whatsapp" nicht aber "telegram"; orchestrator.py-Source enthaelt weder `"whatsapp"` noch `'whatsapp'` als Channel-Wert noch `from zerberus.modules.whatsapp`-Import), `TestFrontendListingOhneWhatsapp` (1 — static/index.html lower-case-free von whatsapp), `TestConfigBeispielOhneWhatsapp` (1 — config.yaml.example ohne `whatsapp:` und `twilio`), `TestRequirementsOhneTwilio` (1 — requirements.txt ohne twilio), `TestLegacyKommentarBereinigt` (1 — legacy.py ohne whatsapp). **8/8 gruen lokal** (15.49 s, ein FutureWarning aus huggingface_hub `resume_download` unverwandt).
+
+**Logging.** Kein neues Logging — Modul-Entfernung beruehrt keine Live-Pfade (WhatsApp-Webhook war nicht in main.py registriert; Telegram laeuft via `zerberus.modules.telegram.router` separat).
+
+**Lessons.** Keine universellen neuen Lessons aus dieser Session — der WhatsApp-Removal-Patch war Mini-Operation mit bekannten Patterns (Modul-Loeschung + Reference-Sweep + Source-Audit-Test). Projekt-Lessons unveraendert.
+
+**Status-Updates parallel.** BACKLOG, SUPERVISOR, PROJEKTDOKU, HANDOVER, mjolnir, FEATURE_REQUEST → _ERLEDIGT. Keine Commit-Hashes im PROJEKTDOKU-Eintrag — die werden erst im finalen Commit nach diesem Edit gesetzt.
+
+**Risiko und Rollback.** Sehr gering. Rollback: `git revert <commit>` haengt die WhatsApp-Stub-Dateien wieder ein und stellt die zwei Kommentar-Zeilen + die `whatsapp`-Set-Membership wieder her. Da das Modul nie produktiv genutzt wurde (Twilio nicht installiert, `enabled=False` Default), gibt es keinen Daten-Verlust-Risiko.
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert. Modul-Loeschung, Reference-Sweep, Test-Erstellung, Test-Lauf, Doku-Pflege, Commit, Push, Sync alles autonom.
+
+---
+
+*Stand: 2026-05-19, Patch B-decisions-init — Planungs- + Haushalts-Session. WhatsApp-Modul (B-073) vollstaendig entfernt mit 8 Source-Audit-Tests in [`test_b073_whatsapp_removed.py`](../zerberus/tests/test_b073_whatsapp_removed.py). Neue Workflow-Datei `DECISIONS_ZERBERUS.md` im Repo-Root mit drei Eintraegen (D-001/D-002/D-003). Phase 5b Zieltabelle in `MARATHON_WORKFLOW_ZERBERUS.md` als acht Power-Features (Multi-LLM Evaluation, Bugfix-Workflow + Test-Agents per Projekt, Multi-Agent Orchestration, Debugging Console, Reasoning Modes, Cost Transparency, Agent Observability, Lessons-Cron B-074). Naechste "Go"-Session ohne diesen Auftrag weiss: Phase 5b steht, Reihenfolge fehlt noch.*
+
