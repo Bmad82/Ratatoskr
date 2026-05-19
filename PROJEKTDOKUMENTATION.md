@@ -9982,3 +9982,119 @@ Wenn der Kurzname im neuen FEATURE_REQUEST uebereinstimmt: kein Konflikt, Chris 
 
 *Stand: 2026-05-19, Patch B-decisions-init — Planungs- + Haushalts-Session. WhatsApp-Modul (B-073) vollstaendig entfernt mit 8 Source-Audit-Tests in [`test_b073_whatsapp_removed.py`](../zerberus/tests/test_b073_whatsapp_removed.py). Neue Workflow-Datei `DECISIONS_ZERBERUS.md` im Repo-Root mit drei Eintraegen (D-001/D-002/D-003). Phase 5b Zieltabelle in `MARATHON_WORKFLOW_ZERBERUS.md` als acht Power-Features (Multi-LLM Evaluation, Bugfix-Workflow + Test-Agents per Projekt, Multi-Agent Orchestration, Debugging Console, Reasoning Modes, Cost Transparency, Agent Observability, Lessons-Cron B-074). Naechste "Go"-Session ohne diesen Auftrag weiss: Phase 5b steht, Reihenfolge fehlt noch.*
 
+---
+
+## Patch B-074 — Phase 5b Prio 1: Lessons-Cron implementiert (2026-05-19)
+
+**Anlass.** FEATURE_REQUEST_ZERBERUS.md (Supervisor-Session 2026-05-19, gleicher Tag wie B-decisions-init): Phase-5b-Zieltabelle hat seit B-decisions-init eine acht-Feature-Liste — Chris priorisiert per Supervisor (Reihenfolge: 1 Lessons-Cron, 2 Debugging Console, 3 Agent Observability, 4 Bugfix-Workflow + Test-Agents per Projekt, 5 Multi-Agent Orchestration, 6 Reasoning Modes, 7 Cost Transparency, 8 Multi-LLM Evaluation, Leitmotiv „Multi-Agent im Docker laeuft"). D-002 wird gleichzeitig entschieden: APScheduler-Job in-process statt separates Python-Script unter Windows Task Scheduler (Begruendung Chris: Zerberus ist das Verwaltungszentrum, wenn Zerberus down ist sind auch die Projekte down die Lessons erzeugen). Mit dieser Doppel-Entscheidung wird B-074 implementierbar — kleiner Warmup-Patch fuer Phase 5b.
+
+**Block A — Phase-5b-Zieltabelle priorisiert.** [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Phase-5b-Sektion umgebaut: Tabelle bekommt neue Prio-Spalte links, Reihenfolge eingetragen, B-074 auf ERLEDIGT-Status gesetzt mit Patch-Verweis. D-002-Vermerk im Tabellen-Header (statt im Tabellen-Eintrag — der Grund der Entscheidung gilt fuer alle nachfolgenden Phase-5b-Patches). Naechster-Schritt-Hinweis am Tabellen-Ende auf Prio 2 (Debugging Console) umgeschrieben. [`DECISIONS_ZERBERUS.md`](../DECISIONS_ZERBERUS.md) D-002 auf ERLEDIGT mit Datum 2026-05-19 + Begruendung + Patch-Verweis.
+
+**Block B — B-074 Lessons-Cron implementiert.**
+
+Architektur entlang des bestehenden APScheduler-Patterns: `_scheduler` ist die `AsyncIOScheduler`-Instanz aus `zerberus.modules.sentiment.overnight.create_scheduler()` (P57 Overnight-Job 04:30, plus seit P214 Per-Task-Cron via `initialize_task_scheduler`, plus seit P213-pre-4 Backup-GC). B-074 haengt einen weiteren Cron-Job auf dem gleichen Scheduler ein (direktes `add_job` ueber den Helper `register_lessons_cron_job`), analog Backup-GC und Overnight. Damit gibt es einen einzigen APScheduler-Lebenszyklus im Lifespan-Manager, sauberer Shutdown via `_scheduler.shutdown(wait=False)`.
+
+**Modul** [`zerberus/modules/lessons_cron/__init__.py`](../zerberus/modules/lessons_cron/__init__.py) ist Helper-Modul-Marker (Docstring beschreibt D-002-Entscheidung). Kein `router.py` — der Auto-Loader in `main.py` skipt diesen Pfad mit Log-Eintrag `Helper-Modul` (gleiches Pattern wie `modules/scheduler/`).
+
+**Runner** [`zerberus/modules/lessons_cron/runner.py`](../zerberus/modules/lessons_cron/runner.py). Drei Schichten klar getrennt:
+
+(1) **Pure-Function-Schicht** (kein File-I/O ausser Lesen via `Path.read_text`, keine Async, keine APScheduler-Imports — vollstaendig deterministisch + unit-testbar):
+
+- `discover_lessons_files(scan_paths)` — rekursiver `rglob("lessons_*.md")` ueber alle Pfade, filtert auf `is_file()`, sammelt in `set` (Dedup) plus `resolve()` (Symlink-stabil), Returns sortierte Liste. Skipt nicht-existente Pfade + Datei-statt-Dir + leere Strings ohne Crash.
+- `aggregate_lessons_content(files)` — liest UTF-8, baut Markdown-Header `## <pfad>\n\n<content>` pro Datei. Skipt unlesbare Dateien mit Warn-Log (Crash darf nicht den Lauf abbrechen). Leere/whitespace-Dateien werden uebersprungen.
+- `build_merge_messages(content)` — 2-Element-Array `[{role: "system", ...}, {role: "user", ...}]`. **System-Prompt** (Konstante `MERGE_SYSTEM_PROMPT`): "Du bist ein Senior-Engineer der projektuebergreifende Lessons-Learned konsolidiert. ... extrahiere universelle, projektuebergreifende Lessons, fasse aehnliche Erkenntnisse zusammen, behalte den Kontext/Anlass bei. Output: Markdown-Format kompatibel mit GLOBAL_LESSONS.md ... Keine projektspezifischen Details wie Patch-IDs oder interne Dateipfade in den universellen Lessons." **User-Prompt**: Template `MERGE_USER_PROMPT_TEMPLATE` mit `{content}`-Placeholder. Defense-Begruendung fuer Konstanten-Exports + Test: System-Prompt darf nicht versehentlich umgeschrieben werden ohne dass jemand den Test mit anfasst (Konsistenz fuer das Output-Format ueber Repos).
+- `build_log_entry(*, timestamp, files_count, patterns_count, error=None)` — eine Zeile Markdown-Listenpunkt fuer `CONSOLIDATION_LOG.md`: `- 2026-05-19T04:30:00Z — files=12 patterns=42 status=ok\n` oder `- ... status=error error="..."\n`. Newlines im Error-Feld werden zu Spaces sanitized (sonst zerstoeren sie das eine-Zeile-pro-Lauf-Format).
+- `count_patterns(llm_output)` — Audit-Heuristik fuer Log-Eintrag: zaehlt `- `-Bullet-Zeilen + `#`-Header-Zeilen (eingerueckte beruecksichtigt). Nur Audit-Schaetzung, nicht entscheidungsrelevant.
+
+(2) **I/O-Schicht** (Datei-System, sync):
+
+- `write_output(path, content)` — atomic via `tempfile + os.replace`-Pattern: erst nach `<path>.tmp` schreiben, dann atomisch umbenennen. Parent-Verzeichnis on-demand mit `parents=True, exist_ok=True`. Verhindert dass ein abgebrochener Schreibvorgang das alte `GLOBAL_LESSONS.md` zerstoert.
+- `append_log(path, entry)` — `open(..., "a", encoding="utf-8")` plus Parent-Dir on-demand. Best-Effort; Caller schluckt Crash.
+
+(3) **Async-Schicht** (LLM-Call + High-Level Run):
+
+- `run_lessons_consolidation(cfg, *, llm_service=None)` ist die High-Level-Run-Funktion. Pfad: (1) discover_lessons_files; (2) aggregate_lessons_content; (3) build_merge_messages; (4) Lazy-Import `LLMService` falls keiner injiziert, `await service.call(messages, session_id="lessons-cron-074")` — `LLMService.call` returns `(answer, model, prompt_tokens, completion_tokens, cost)`-Tuple und schreibt Cost in `costs`-Tabelle automatisch via `save_cost(session_id, ...)`; (5) `write_output` mit `answer`; (6) `append_log` mit `build_log_entry(...)`. Returns Dict `{files_count, patterns_count, status, error}`. Try/Except umschlieszt den gesamten Pfad — jeder Fehler (DB, LLM, FS, Network) landet als `error`-Feld im Return-Dict UND als `status=error`-Zeile im `CONSOLIDATION_LOG.md`. Logging-Tag `[LESSONS-074]` mit `discover/wrote/done`-Events.
+
+Relativer `consolidation_log`-Pfad wird neben `output_path` aufgeloest (typischer Pflege-Ort fuer das Lessons-Repo). Absoluter Pfad wird wie angegeben verwendet.
+
+**APScheduler-Hookup:**
+
+- `register_lessons_cron_job(scheduler, cfg)` — registriert die Closure `_run` als Cron-Job mit `trigger="cron"`, `hour=cfg.schedule_hour`, `minute=cfg.schedule_minute`, `id=JOB_ID` (Konstante `"lessons-cron-074"`), `replace_existing=True`, `misfire_grace_time=3600` (1h Toleranz nach Idle/Reload, analog Overnight-Job P57). Die Closure liest Settings live ueber `get_settings()` damit Hot-Reloads via `invalidates_settings`/`settings_writer` greifen ohne Job-Re-Registrierung. Skipt wenn `cfg.enabled=False` (loggt einmalig), oder wenn `scheduler is None`, oder bei APScheduler-Crash (loggt Warning).
+- `initialize_lessons_cron(scheduler)` — High-Level-Init fuer den Lifespan-Manager. Liest Settings, ruft `register_lessons_cron_job`. Returns Bool.
+
+**Pydantic-Config-Klasse `LessonsCronConfig`** in [`zerberus/core/config.py`](../zerberus/core/config.py) zwischen `PrevalidationConfig` und `ProfileConfig`. Felder mit Defaults:
+
+- `enabled: bool = False` — gewollt False, weil der Job in andere Repos schreibt (`Bmad82/Claude/lessons/`); muss explizit aktiviert werden.
+- `schedule_hour: int = 4` + `schedule_minute: int = 30` — Default 04:30 Europe/Berlin (steht so in Memory-Spec). Folgt dem Overnight-Pattern (P57): weit nach dem letzten Patch-Push, vor dem ersten Frueh-Login.
+- `scan_paths: List[str] = []` — leer als Default; produktiv: `["C:\\Users\\chris\\Python"]`.
+- `output_path: str = ""` — leer als Default; produktiv: `"C:\\Users\\chris\\Python\\Rosa\\Nala_Rosa\\Claude\\lessons\\GLOBAL_LESSONS.md"`.
+- `consolidation_log: str = "CONSOLIDATION_LOG.md"` — relativ, landet neben `GLOBAL_LESSONS.md`.
+
+`Settings`-Klasse bekommt Feld `lessons_cron: LessonsCronConfig = LessonsCronConfig()`. Damit ist `settings.lessons_cron.enabled` als typisierter Pydantic-Accessor verfuegbar (statt `settings.modules.get("lessons_cron", {}).get("enabled")`-Boilerplate).
+
+**Lifespan-Hookup** in [`zerberus/main.py`](../zerberus/main.py) zwischen P214-Tasks-Init und P213-pre-4-Backup-GC: prueft `_scheduler is not None`, lazy-importiert `initialize_lessons_cron`, prueft `_lc_cfg.enabled`. Bei `True` → `initialize_lessons_cron(_scheduler)` im try/except, Log-Item `Lessons-Cron` mit `ok` (`HH:MM (N Pfad(e))`) bzw. `fail`. Bei `enabled=False` → `_log_item("Lessons-Cron", "skip", "deaktiviert (lessons_cron.enabled=false)")`. Bei `_scheduler is None` (APScheduler nicht installiert) → `_log_item("Lessons-Cron", "skip", "kein APScheduler")`.
+
+**Config-Beispiel-Block** in [`config.yaml.example`](../config.yaml.example) vor JWT-Sektion mit 6 Feldern + 8 Kommentar-Zeilen die D-002-Entscheidung + Default-False-Begruendung erlaeutern.
+
+**Edits.**
+
+- **`zerberus/modules/lessons_cron/__init__.py`** — NEU, Helper-Modul-Marker.
+- **`zerberus/modules/lessons_cron/runner.py`** — NEU, Pure + I/O + Async + APScheduler-Hookup.
+- **`zerberus/core/config.py`** — `LessonsCronConfig`-Klasse (Doc-String + 6 Felder) + Settings-Feld `lessons_cron`.
+- **`zerberus/main.py`** — Lifespan-Hookup mit drei Code-Pfaden (enabled, disabled, kein-scheduler).
+- **`config.yaml.example`** — 9-Zeilen-Block `lessons_cron:` plus 8 Kommentar-Zeilen, vor JWT-Sektion.
+- **`zerberus/tests/test_b074_lessons_cron.py`** — NEU, 50 Tests in 13 Klassen (siehe Tests-Block).
+- **`MARATHON_WORKFLOW_ZERBERUS.md`** — Phase-5b-Tabelle: Prio-Spalte + Reihenfolge + D-002-Vermerk im Header + B-074 ERLEDIGT + Naechster-Schritt-Hinweis auf Prio 2.
+- **`DECISIONS_ZERBERUS.md`** — D-002 auf ERLEDIGT.
+- **`BACKLOG_ZERBERUS.md`** — Header-Stempel um B-074-Hinweis erweitert, B-074-Eintrag auf ERLEDIGT mit voller Implementierungs-Detail.
+- **`SUPERVISOR_ZERBERUS.md`** — Header umgeschrieben, neue Sektion B-074 als erste Inhaltssektion.
+- **`docs/PROJEKTDOKUMENTATION.md`** (diese Datei) — Bibel-Eintrag dieses Patches angehaengt.
+- **`HANDOVER_ZERBERUS.md`** — neu geschrieben.
+- **`mjolnir.md`** — STATUS=FERTIG fuer B-074.
+- **`FEATURE_REQUEST_ZERBERUS.md`** — umbenannt zu `FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md` mit Audit-Anhang.
+
+**Tests.** Neuer File [`zerberus/tests/test_b074_lessons_cron.py`](../zerberus/tests/test_b074_lessons_cron.py) mit **50 Unit-Tests** in 13 Klassen.
+
+- `TestDiscoverLessonsFiles` (7) — rekursiv via tmp_path, leere Scan-Liste, nicht-existenter Pfad, leerer String, Datei-statt-Dir, Dedup mit ueberlappenden Pfaden, Konstante `LESSONS_GLOB`.
+- `TestAggregateLessonsContent` (4) — Pfad-Header-Format, leere Liste, leere Datei wird uebersprungen, unlesbare Datei (Ghost-Path) skipt ohne Crash.
+- `TestBuildMergeMessages` (4) — Anzahl=2, System-Prompt erwaehnt GLOBAL_LESSONS, User-Prompt enthaelt Payload, Konstante `MERGE_SYSTEM_PROMPT` enthaelt erwartete Schluesselwoerter.
+- `TestBuildLogEntry` (3) — ok-Pfad (Format-Assertion auf alle Felder), error-Pfad mit Error-Feld, Newlines im Error werden zu Spaces sanitized.
+- `TestCountPatterns` (4) — Bullets+Header zaehlen, leerer String=0, kein Match=0, eingerueckte Markierungen zaehlen.
+- `TestWriteOutput` (3) — atomic write neu, ueberschreibt vorhandene Datei, kein `.tmp` uebrig.
+- `TestAppendLog` (2) — neu mit Parent-Dir-Anlage, append haengt an.
+- `TestRunLessonsConsolidation` (5) — Happy-Path mit Mock-LLM (`status=ok`, `files_count=2`, Output + Log geschrieben), keine Dateien (`status=error`, kein Output, Log mit error), LLM-Antwort "Fehler:" (LLMService-Konvention), LLM crasht (RuntimeError-Path), Quell-Dateien werden nie modifiziert.
+- `TestRegisterLessonsCronJob` (5) — Happy mit Mock-Scheduler (verifiziert id/trigger/hour/minute/replace_existing/misfire_grace_time), `enabled=False` skipt, `scheduler=None` skipt, APScheduler `add_job` crasht → False, Konstante `JOB_ID="lessons-cron-074"`.
+- `TestSettingsIntegration` (3) — Pydantic-Default `enabled=False`, `Settings.model_fields` enthaelt `lessons_cron`, `initialize_lessons_cron(None)` crasht nicht.
+- `TestMainPyHookupSourceAudit` (4) — Source-Audit auf `zerberus/main.py`: Import-Statement vorhanden, Aufruf-Site vorhanden, Log-Item-String vorhanden, enabled-Pruefung vorhanden.
+- `TestModulStruktur` (4) — Verzeichnis existiert, `runner.py` existiert, kein `router.py` (Helper-Modul-Pattern), `__init__.py` existiert.
+- `TestConfigYamlExample` (2) — `lessons_cron:`-Sektion mit allen 6 Feldern, Default `enabled: false`.
+
+**50/50 PASSED** in 1.00s. Kombiniert mit B-073 Regression: 58/58 PASSED in 6.84s (ein FutureWarning aus `huggingface_hub.file_download` `resume_download` unverwandt, kommt aus dem Import-Tree).
+
+**Logging.** Neuer Tag `[LESSONS-074]` mit Events:
+
+- `discover: N files in M path(s)` — beim Run-Start.
+- `wrote N bytes to <path> (patterns~K)` — bei erfolgreichem Write.
+- `read failed path=<path>: <exc>` — beim Skip einer unlesbaren Quell-Datei.
+- `log-append failed: <exc>` — wenn `CONSOLIDATION_LOG.md` nicht schreibbar.
+- `run crashed` (mit `exc_info=True`) — Top-Level-Try/Except.
+- `done status=<ok|error> files=<N> patterns=<K>` — am Run-Ende.
+- `Job registriert: HH:MM Europe/Berlin (scan_paths=..., output_path=...)` — bei erfolgreicher Registrierung.
+- `enabled=False — Job nicht registriert.` — wenn der Job geskipt wird.
+- `kein APScheduler — skip.` — wenn `scheduler is None`.
+- `add_job failed: <exc>` — APScheduler-Crash.
+
+**Schemata.** Keine neuen DB-Tabellen. Audit-Trail via Markdown-Log (`CONSOLIDATION_LOG.md`) statt SQL — bewusst, weil das Lessons-Repo eh in Git lebt und der Log-Eintrag direkt im Lessons-Repo neben `GLOBAL_LESSONS.md` liegt. Kein DB-Migrate noetig.
+
+**Lessons.** Keine universellen neuen Lessons aus dieser Session — Patterns sind bekannt (Helper-Modul-Anlage analog `modules/scheduler/`, APScheduler-Direkt-Hookup analog Backup-GC, Pure-Function-Schicht analog `code_veto.py`/`spec_check.py`, atomic write analog `projects_repo.py`). Projekt-Lessons unveraendert. Eventuell merkenswert: **Default `enabled=False` bei Features die in andere Repos schreiben** — der Patch verhindert das versehentliche Aktivieren beim ersten `git clone` von Zerberus auf einem Rechner ohne Bmad82-Claude-Repo. Aber das ist Pattern-Anwendung, nicht neue Erkenntnis.
+
+**Status-Updates parallel.** BACKLOG, SUPERVISOR, PROJEKTDOKU, HANDOVER, mjolnir, FEATURE_REQUEST → _ERLEDIGT. Commit-Hashes werden im finalen Commit gesetzt; HANDOVER traegt sie nach.
+
+**Risiko und Rollback.** Sehr gering. Default `enabled=False` heisst: ohne config.yaml-Aenderung passiert nichts. Lifespan-Hookup ist try/except umschlossen — Crash beim Init blockiert nicht den App-Start. APScheduler-Crash im Job-Run schreibt Audit-Log-Zeile und endet, kein Server-Crash. Rollback: `git revert <commit>` entfernt Modul + Config-Feld + Lifespan-Hookup; die Pydantic-Default-Werte fallen mit der Klasse weg, ohne dass config.yaml angefasst werden muss (Settings ignoriert das `lessons_cron:`-Feld dann via `extra = "allow"`).
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert — Modul-Anlage, Test-Lauf, Doku-Pflege, Commit, Push, Sync alles autonom.
+
+---
+
+*Stand: 2026-05-19, Patch B-074 — Phase 5b Prio 1 Lessons-Cron ERLEDIGT. APScheduler-Job 04:30 Europe/Berlin in-process (D-002 entschieden), Modul [`zerberus/modules/lessons_cron/runner.py`](../zerberus/modules/lessons_cron/runner.py), Pydantic-Klasse `LessonsCronConfig`, Lifespan-Hookup in `zerberus/main.py`, Config-Beispiel-Block. 50 Tests in [`test_b074_lessons_cron.py`](../zerberus/tests/test_b074_lessons_cron.py) gruen. B-073 Regression-Check 8/8 gruen. Naechster Phase-5b-Patch: Prio 2 = Debugging Console (Hel zeigt Live-Logs, Token-Verbrauch, RAG-Treffer).*
+
