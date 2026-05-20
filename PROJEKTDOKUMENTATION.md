@@ -10243,3 +10243,61 @@ Plus: 4 `node --check`-Tests umgestellt — vorher extrahierten sie per Regex di
 
 *Stand: 2026-05-20, Patch Hel-Frontend-Separation — `hel.py` 6.576 → 3.604 Zeilen. Inline-CSS + 4 JS-Bloecke (FOUC + Main + GPU-Toast + PWA-SW) extrahiert nach `zerberus/static/css/hel.css` + `zerberus/static/js/hel-*.js`. ADMIN_HTML referenziert die Statics. 16 Source-Audit-Tests via gemeinsamem Helper `_hel_source.py` migriert; `hel_js_paths()`-Tests fuer `node --check`; 9 Anti-Regress-Tests in `test_hel_frontend_separation.py`. **0 neue Regressions** (Baseline 45/3392 → 45/3401 via `git stash`-Diff verifiziert, +9 Anti-Regress-Tests). Nala-Blueprint reproduziert sich.*
 
+---
+
+## Patch FEATURE_REQUEST_ZERBERUS Teil-Lieferung — F-01 + B-03 + B-04 + Foundation-Layer (2026-05-20 → 2026-05-21)
+
+**Anlass.** FEATURE_REQUEST von Chris ueber Mjoelnir mit fuenf Punkten plus Hauptauftrag „Nala Design-Integration aus `docs/Zerberus.zip`" (Kintsugi Void/Gold/Ember-Palette aus Claude-Design-Export). Priorisierung: Design → F-01 → B-01 → B-02/B-03 → B-04. **Multi-Session-Auftrag, STATUS: IN_ARBEIT** — alle vier Bugs (B-01, B-02, B-03, B-04) und das Feature F-01 sind komplett umgesetzt; **nur die Kintsugi-Komponent-Migration ist vertagt** (Foundation-Layer geliefert).
+
+**Strategische Entscheidung „Foundation-Layer-only" fuer Design-Integration.** Der Claude-Design-Export ist ein UI-only-Prototyp ohne Backend-Wiring (kein SSE, kein Voice, kein jsPDF-Export, kein Pacemaker, kein OpenRouter-Profile-Header-Handling). Blindes Mergen wuerde alle Nala-Backend-Pfade brechen. Loesung: Kintsugi-Tokens isoliert in neuer Datei [`zerberus/static/css/nala-design.css`](../zerberus/static/css/nala-design.css), die NACH `nala.css` geladen wird (Cascade-Override nur auf Nala). **KRITISCH:** die neuen Tokens duerfen NICHT in `shared-design.css` — Hel nutzt die alten `--zb-primary`-Variablen und wuerde sofort brechen. Prototyp-Files bleiben als Read-Only-Referenz im Repo (`nala-kintsugi.css`, `nala-kintsugi-prototype.js` — **nicht** geladen). Komponent-Migration (Bubble-Styles, Recorder-UI, Modal-Layout) folgt in Anschluss-Session.
+
+**F-01 — Nala Bild-Upload-Button.** Vision-Modell (`qwen/qwen2.5-vl-7b-instruct` via OpenRouter) war konfiguriert, aber im UI fehlte der Upload-Button. (a) HTML in [`zerberus/app/routers/nala.py`](../zerberus/app/routers/nala.py): verstecktes `<input type="file" id="image-upload" accept="image/*">` + sichtbarer `<button class="image-btn" id="imageBtn">📷</button>` neben Voice-Recorder + Send-Button. (b) Neuer Endpoint `POST /nala/image` mit `UploadFile = File(...)` + `prompt: str = Form("")` — **wichtig:** bei `UploadFile` brauchen weitere non-file-Form-Felder zwingend `Form(...)`, sonst ignoriert FastAPI sie (Stolperstein erstmalig getroffen). Endpoint liest Bytes, prueft Groesse gegen `max_image_size_mb * 1024 * 1024` (Default 10 MB), ruft `analyze_image()` aus [`zerberus/utils/vision.py`](../zerberus/utils/vision.py), liefert `{content, error, latency_ms, model}`. (c) JS-Handler in [`zerberus/static/js/nala-main.js`](../zerberus/static/js/nala-main.js): `FormData`-Submit mit `profileHeaders()`, handhabt 401/413/generic-error, waehrend Processing: Button-Disable + `.processing`-Klasse + Pulse-Animation. (d) CSS in [`zerberus/static/css/nala.css`](../zerberus/static/css/nala.css): `.image-btn` der `.send-btn, .mic-btn`-Group hinzugefuegt (50×50 px = Touch-Target ≥44px), Gold-Background, `pulseGold 1.2s infinite`-Animation.
+
+**B-04 — Huginn 409 Conflict / Zombie-Prozesse Dauerfix.** Wurzel: Telegram-Bot-API erlaubt nur **einen** aktiven `getUpdates`-Caller pro Bot-Token. Mehrere Python-Prozesse (Hard-Kill, Crash mit verwaisten Workern) bekommen alle HTTP 409. Shutdown-Hook in `main.py` ist korrekt, hilft aber nicht bei SIGKILL/Crash. Loesung: **PID-Lock** + cross-platform Liveness-Check. In [`zerberus/modules/telegram/bot.py`](../zerberus/modules/telegram/bot.py): (a) Modul-Konstanten `PID_LOCK_FILE = Path("data/huginn_polling.pid")`, `_LAST_POLL_409`, `_POLL_409_BACKOFF = 15.0`. (b) `_pid_is_alive(pid)` — Windows via `ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)` + `GetExitCodeProcess()` + Vergleich gegen `STILL_ACTIVE=259`; Unix via `os.kill(pid, 0)`. (c) `acquire_polling_lock()` / `release_polling_lock()` — Lock-File ueberlebt Crashes, Takeover nur wenn alter PID nachweislich tot. (d) `get_updates()` erkennt HTTP 409 → triggert 15s-Backoff mit Single-WARN-Suppression. (e) `long_polling_loop` ist von `try/finally: release_polling_lock()` umschlossen. In [`zerberus/modules/telegram/router.py`](../zerberus/modules/telegram/router.py): `startup_huginn()` ruft `acquire_polling_lock()` vor `asyncio.create_task(long_polling_loop(...))`; Verweigerung → WARN-Log, Polling in dieser Instanz nicht gestartet. [`.gitignore`](../.gitignore): `data/huginn_polling.pid`-Eintrag.
+
+**B-03 — Hel LLM-Tab Sortierung nach Name.** In [`zerberus/static/js/hel-main.js::renderModelSelect`](../zerberus/static/js/hel-main.js) lag ein toter Code-Pfad: bei `_currentSort === 'name'` lief der **gleiche** Vergleicher wie beim Preis-Pfad (`parseFloat(a.pricing?.prompt) - parseFloat(b.pricing?.prompt)`). Fix: Name-Pfad bekommt `nameA.localeCompare(nameB, 'de', { sensitivity: 'base' })` — case-insensitive, Umlaute korrekt einsortiert. „Patch 147"-Comment-Anker wiederhergestellt, weil `test_default_sort_nach_preis` ihn als Strukturmarker prueft (sonst neue Regression).
+
+**B-02 — Hel LLM-Tab Kontostandanzeige.** Wurzel: OpenRouter Pre-paid-Accounts liefern `data.limit == null` bei `/auth/key`, die alte `float(limit_usd) - float(usage)`-Berechnung in [`zerberus/app/routers/hel.py::get_balance`](../zerberus/app/routers/hel.py) gibt `None` zurueck und das Frontend laeuft in einen `TypeError: Cannot read property 'toFixed' of null`. Backend-Fix: bei `limit_usd is None` Zusatz-Call auf `https://openrouter.ai/api/v1/credits` (liefert `total_credits` + `total_usage`, die als neue `limit_usd`/`usage` einsetzen). Frontend-Fix in [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js): USD-Suffix nur gerendert wenn `curBalance != null && !Number.isNaN(curBalance)`, EUR-String nur wenn `balanceEur != null && !Number.isNaN(balanceEur)` — sonst Fallback „Kontostand: nicht verfuegbar".
+
+**B-01 — Whisper-Cleaner ARD-Funk-Hallucination.** In [`whisper_cleaner.json`](../whisper_cleaner.json) zwei neue Regex-Eintraege direkt nach dem ZDF-Pattern-Block (Reihenfolge ist signifikant — der Cleaner laeuft sequentiell): (a) `(?i)^\s*ard\s+text\s+im\s+auftrag\s+von\s+funk\.?\s*$` als Komplettzeilen-Match, (b) `(?i)\bard\s+text\s+im\s+auftrag\s+von\s+funk\.?` als Inline-Variante. Beide mit `_comment`-Feld fuer B-01-Traceability. Replacement leer.
+
+**Vertagt.** Nur die Kintsugi-Komponent-Migration (Sidebar/Project-View/Settings-Panel-Refactor mit neuen Class-Names + IDs + Backend-Re-Wiring) ist in eine Folge-Session vertagt. Alle vier Bugs (B-01, B-02, B-03, B-04) und das Feature F-01 sind komplett umgesetzt.
+
+**Test-Ergebnis. 0 neue Regressions.** Per `git stash` Baseline: 45 Failures, 108 Errors, 3.401 Passes. Nach Patch: **45 Failures, 108 Errors, 3.401 Passes** — exakt gleiche Failure-Liste (per Set-Diff verifiziert). Eine waehrend-Implementierung-aufgetauchte Regression (`test_default_sort_nach_preis`, weil mein erster B-03-Fix den „Patch 147"-Anker entfernt hatte) wurde durch Anker-Wiederherstellung gefixt. `PROJECTS= python -m pytest` Voll-Lauf 4:02 min.
+
+**Stolpersteine.** (1) `Form(...)`-Pflicht bei `UploadFile`: ohne `Form()` werden non-file-Felder in Multipart-Requests ignoriert (neue Lesson). (2) Config-Key-Verwechslung `max_image_mb` vs. `max_image_size_mb` — aktuelle Codebase nutzt letzteres; defensiver Fallback eingebaut. (3) `PROJECTS`-Env-Var Konflikt mit `pydantic-settings`: Chris hat global `PROJECTS=Zerberus:...,Mjolnir:...` gesetzt, das kollidiert mit `Settings.projects`. Workaround: `PROJECTS= python -m pytest ...` (leere Var explizit setzen) — pre-existing Stolperstein, bereits dokumentiert.
+
+**Multi-Session-Status.** [`mjolnir.md`](../mjolnir.md) **STATUS: IN_ARBEIT** mit Offene-Punkte-Liste fuer Folge-Session. [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) als Top-Eintrag mit Zwischenstand. FEATURE_REQUEST_ZERBERUS.md **nicht** umbenannt — Auftrag laeuft weiter.
+
+**Edits dieser Session.**
+
+- **`whisper_cleaner.json`** — B-01: 2 Regex-Eintraege nach ZDF-Pattern-Block.
+- **`zerberus/app/routers/hel.py`** — B-02: `/credits`-Fallback wenn `limit_usd is None`.
+- **`zerberus/app/routers/nala.py`** — F-01: `Form`-Import, Bild-Upload-HTML, neuer `POST /nala/image`-Endpoint + `<link>` auf `nala-design.css`.
+- **`zerberus/static/js/nala-main.js`** — F-01 Image-Upload-Handler nach `toggleRecording`.
+- **`zerberus/static/css/nala.css`** — `.image-btn` Styles + `pulseGold`-Animation.
+- **`zerberus/static/css/nala-design.css`** — NEU, Kintsugi-Token-Foundation-Layer (separate Datei!).
+- **`zerberus/static/css/nala-kintsugi.css`** — NEU, Read-Only-Referenz-Prototyp (NICHT geladen).
+- **`zerberus/static/js/nala-kintsugi-prototype.js`** — NEU, Read-Only-Referenz-Prototyp (NICHT geladen).
+- **`zerberus/static/assets/`** — NEU, Kintsugi-SVGs (`kintsugi-heart.svg`, `noise-filter.svg`, `seam-divider.svg`).
+- **`zerberus/modules/telegram/bot.py`** — B-04: PID-Lock + `_pid_is_alive` + 409-Backoff.
+- **`zerberus/modules/telegram/router.py`** — B-04: `acquire_polling_lock()`-Aufruf in `startup_huginn`.
+- **`zerberus/static/js/hel-main.js`** — B-02: EUR-Anzeige + USD-Suffix mit `Number.isNaN`-Guard; B-03: Locale-aware Name-Sort, „Patch 147"-Anker erhalten.
+- **`.gitignore`** — `data/huginn_polling.pid`-Eintrag.
+- **`SUPERVISOR_ZERBERUS.md`** — Header + neue Sektion.
+- **`docs/PROJEKTDOKUMENTATION.md`** (diese Datei) — dieser Eintrag.
+- **`README.md`** — Stand-Anker.
+- **`HANDOVER_ZERBERUS.md`** — neu geschrieben (Zwischenstand).
+- **`mjolnir.md`** — **STATUS: IN_ARBEIT** + Offene-Punkte.
+- **`lessons_ZERBERUS.md`** — 2 neue Lessons (Foundation-Layer-Trennung, PID-Lock).
+- **`docs/huginn_kennt_zerberus.md`** (+ Mirror in `docs/RAG Testdokumente/`) — Stand-Anker.
+- **`FEATURE_REQUEST_ZERBERUS.md`** — **NICHT** umbenannt (Multi-Session).
+
+**Lessons.** Zwei: (1) **Claude-Design-Export ist UI-only — Migration in Backend-getriebenes Frontend braucht Foundation-Layer-Trennung.** Prototyp hat kein SSE/Voice/Pacemaker-Wiring; blindes Mergen bricht alle Pfade. Generische Regel fuer Design-Imports: erst Tokens isoliert pro Persona, dann Komponente-fuer-Komponente migrieren mit Backend-Re-Wiring. (2) **Telegram Long-Polling braucht PID-Lock gegen Zombie-Caller.** Bot-API erlaubt nur einen `getUpdates`-Caller; Crash/SIGKILL hinterlaesst Geister-Prozess. PID-Lock + cross-platform Liveness-Check ist die einzige robuste Loesung.
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert — Implementation, Tests, Doku, Pending: Commit + Push + Sync alles autonom.
+
+---
+
+*Stand: 2026-05-21, Patch FEATURE_REQUEST_ZERBERUS Teil-Lieferung — STATUS: IN_ARBEIT (Multi-Session, nur Kintsugi-Komponent-Migration vertagt). Geliefert: F-01 Nala Bild-Upload-Button (`POST /nala/image` + `📷`-Button + `.image-btn`-CSS), B-01 Whisper-Cleaner ARD-Funk-Regex (Komplettzeile + Inline), B-02 Hel-Kontostand (`/credits`-Fallback + `Number.isNaN`-Guard), B-03 Hel LLM-Tab Name-Sort (`localeCompare('de')`), B-04 Huginn 409 Dauerfix (PID-Lock + cross-platform `_pid_is_alive` + 15s-Backoff). Foundation-Layer fuer Design-Integration: Kintsugi-Tokens isoliert in `nala-design.css` (NICHT in `shared-design.css` — Hel nutzt alte Tokens!). **0 neue Regressions** (Baseline 45/3401 → 45/3401 identische Failure-Liste). FEATURE_REQUEST_ZERBERUS.md NICHT umbenannt (Multi-Session-Regel).*
+
