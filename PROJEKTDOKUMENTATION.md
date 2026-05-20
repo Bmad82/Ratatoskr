@@ -10179,3 +10179,67 @@ Plus: 4 `node --check`-Tests umgestellt — vorher extrahierten sie per Regex di
 
 *Stand: 2026-05-19, Patch Frontend-Separation — `nala.py` 8.528 → 1.381 Zeilen. Inline-CSS + 3 JS-Bloecke extrahiert nach `zerberus/static/css/nala.css` + `zerberus/static/js/nala-*.js`. NALA_HTML referenziert die Statics. 28 Source-Audit-Tests via gemeinsamem Helper `_nala_source.py` migriert; 4 `node --check`-Tests auf Static-Files umgestellt; 8 Anti-Regress-Tests in `test_frontend_separation.py`. **0 Regressions** im Test-Suite (Baseline 44 → 42 Failures, 108 Errors → 108 Errors, alle pre-existing). `design_export/` Workaround geloescht + `.gitignore`-Eintrag entfernt. Hel-Modul bleibt vorerst inline (BACKLOG-Eintrag fuer Nachfolge-Patch).*
 
+---
+
+## Patch Hel-Frontend-Separation — hel.py inline-Monolith aufgeloest (2026-05-20)
+
+**Anlass.** Folge-FEATURE_REQUEST von Chris via Mjoelnir nach der Nala-Separation: das gleiche Anti-Pattern in [`zerberus/app/routers/hel.py`](../zerberus/app/routers/hel.py) (6.576 Zeilen) aufloesen. Der Nala-Patch dient als Blueprint — selber Helper-Stil, selbe AST-Extraktion, gleicher Static-Mount.
+
+**Phase-1-Inventur.**
+
+- **CSS-Block:** Z. 180–599 (~420 Zeilen) — Hel-Admin-Theme, Tab-Layout, Pacemaker-Styles, GPU-Toast-Styles.
+- **FOUC-Guard:** Z. 640–656 — Inline-`<script>` im `<head>` der Theme-Klasse vor First-Paint setzt (anti-flash).
+- **Haupt-App-Logik:** Z. 1000–3469 (~2.470 Zeilen) — alle Tabs (LLM-Tuning, Settings, Pacemaker, RAG, Projekte, System, Huginn).
+- **GPU-Queue-Toast:** Z. 3472–3534 — Polling auf `/v1/gpu/queue`, Toast-Render bei Konsumenten-Wechsel.
+- **PWA-Service-Worker:** Z. 3537–3544 — Service-Worker-Registrierung (analog Nala-Pattern).
+
+**Extraktion.**
+
+- Inline-CSS (~420 Zeilen) → [`zerberus/static/css/hel.css`](../zerberus/static/css/hel.css).
+- FOUC-Guard → [`zerberus/static/js/hel-fouc.js`](../zerberus/static/js/hel-fouc.js) (im `<head>` geladen).
+- Haupt-App-Logik → [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js) (vor `</body>`).
+- GPU-Queue-Toast → [`zerberus/static/js/hel-gpu-toast.js`](../zerberus/static/js/hel-gpu-toast.js) (vor `</body>`).
+- PWA-Service-Worker → [`zerberus/static/js/hel-pwa-sw.js`](../zerberus/static/js/hel-pwa-sw.js) (vor `</body>`, separat).
+
+**Resultat.** `hel.py` 6.576 → **3.604 Zeilen** (Reduktion: 45,2 %). Der verbleibende Code ist Python-only — FastAPI-Endpoints + Settings-Cache + LLM-Tuning-Logik + HTML-Template mit `<link>`/`<script src>`-Tags.
+
+**Lone Surrogates bei UTF-8-Datei-Schreibung (neue Lesson).** Beim ersten `Path.write_text(js_source, encoding='utf-8')` warf Python `UnicodeEncodeError: 'utf-8' codec can't encode character '\ud83e'` — ein Lone-Surrogate-Codepoint im JS-Code (Emoji-Korruption durch Copy-Paste im Source-File). Standard-UTF-8-Encode kann Lone-Surrogates nicht serialisieren. **Fix:** `js_source.encode('utf-8', errors='replace').decode('utf-8', errors='replace')` vor dem Schreiben — mirroring `_sanitize_unicode()` aus dem Telegram-Code. **Lesson:** Triple-Quoted-Strings aus Python-Source koennen versteckte Lone-Surrogates enthalten; wer sie ohne `errors='replace'` als externe Bytes schreibt, knallt. Universelle Regel fuer Source-Extraktion.
+
+**Test-Anpassung.** 16 Test-Files lasen `hel.py` direkt und prueften Substrings (HTML-Marker, CSS-Klassen, JS-Funktionsnamen, GPU-Toast-Polling, Pacemaker-Toggle). Loesung analog zu Nala: gemeinsamer Helper [`zerberus/tests/_hel_source.py`](../zerberus/tests/_hel_source.py) mit drei Funktionen — `read_combined_hel_source()` konkateniert hel.py + alle 5 Statics, `combine_admin_html_with_statics(admin_html)` haengt die Statics an `hel.ADMIN_HTML` fuer Smoke-Tests, `hel_js_paths()` liefert die vier JS-Files fuer `node --check`-Tests. Migration-Patterns identisch zu Nala (Fixture-Body-Swap / Endpoint+Statics-Combine / Direkter Static-File-Read).
+
+**Anti-Regress-Tests.** Neuer File [`zerberus/tests/test_hel_frontend_separation.py`](../zerberus/tests/test_hel_frontend_separation.py) mit **9 Tests in 3 Klassen**: `TestStaticDateienVorhanden` (5 Files exist + non-empty), `TestAdminHtmlReferenziertStatics` (3 — `<link>`-Tag fuer CSS, vier `<script src>`-Tags), `TestKeineInlineFrontendBlockeMehr` (1 zusammengefasst — `<style>`-Tag fehlt, keine inline `<script>`-Bodies mehr, GPU-Toast-Marker nicht inline, FOUC-Marker nicht inline, PWA-Marker nicht inline).
+
+**Test-Ergebnis. 0 neue Regressions.** Baseline vor Extraktion (per `git stash` + Full-Pytest): **45 failed, 108 errors, 3392 passed**. Nach kompletter Migration: **45 failed, 108 errors, 3401 passed**. Die 9 zusaetzlichen Passes sind die neuen Anti-Regress-Tests. Die 45 Failures sind alle pre-existing (test_huginn_config_endpoint pydantic_settings + test_p213_pre_3_reindex_atomic IndexFlatL2-MagicMock-Issues). **Null neue Failures** verifiziert per Baseline-Diff.
+
+**Edits.**
+
+- **`zerberus/app/routers/hel.py`** — 6.576 → 3.604 Zeilen.
+- **`zerberus/static/css/hel.css`** — NEU.
+- **`zerberus/static/js/hel-fouc.js`** — NEU.
+- **`zerberus/static/js/hel-main.js`** — NEU.
+- **`zerberus/static/js/hel-gpu-toast.js`** — NEU.
+- **`zerberus/static/js/hel-pwa-sw.js`** — NEU.
+- **`zerberus/tests/_hel_source.py`** — NEU, gemeinsamer Helper.
+- **`zerberus/tests/test_hel_frontend_separation.py`** — NEU, 9 Anti-Regress-Tests.
+- **16 bestehende Test-Files migriert** (u.a. test_p205_hel_rag_toast, test_p211_gpu_queue, test_p214_pre_2_scheduler_ui, test_patch169_bugsweep, test_patch170_hel_kosmetik, test_huginn_doc_*).
+- **`SUPERVISOR_ZERBERUS.md`** — Header + neue Sektion.
+- **`docs/PROJEKTDOKUMENTATION.md`** (diese Datei) — dieser Eintrag.
+- **`README.md`** — Stand-Anker.
+- **`docs/huginn_kennt_zerberus.md`** (+ Mirror in `docs/RAG Testdokumente/`) — Stand-Anker.
+- **`lessons_ZERBERUS.md`** — Nala-Blueprint-Bestaetigung + Lone-Surrogates-Lesson.
+- **`BACKLOG_ZERBERUS.md`** — B-080 als ERLEDIGT vermerkt.
+- **`HANDOVER_ZERBERUS.md`** — neu geschrieben.
+- **`mjolnir.md`** — STATUS=FERTIG.
+
+**Was diese Session nicht gemacht hat.** Keine UI-Aenderung — pixel-identisches Hel-Admin-Dashboard, keine neuen Features, keine Python-Refactorings. Reine Architektur-Aenderung analog Nala.
+
+**Risiko und Rollback.** Mittel beim Test-Suite-Eingriff (16 Files migriert), aber sauber verifiziert via Baseline-Diff. Rollback: `git revert <commit>` stellt Inline-Monolith wieder her. Die Anti-Regress-Tests in `test_hel_frontend_separation.py` machen versehentliches Inline-Wiederherstellen sofort sichtbar.
+
+**Lessons.** Zwei: (1) **Nala-Blueprint reproduziert sich** — gleicher Helper-Pattern, gleiche AST-Extraktion, gleiche Migration-Patterns. Inline-Monolith-Anti-Pattern ist generalisierbar; das Setup beim ersten Mal (Nala) hat sich beim zweiten Mal (Hel) ausgezahlt — Time-to-Fix war ~50% kuerzer. (2) **Lone-Surrogates bei UTF-8-Datei-Schreibung** (siehe oben) — generalisierbar fuer alle Source-Extraktion-Workflows.
+
+**Anti-Verstoss-Check (OBERSTES GEBOT).** Null Terminal-Befehle an Chris delegiert — Inventur, Extraktion, Tests, Doku, Commit, Push, Sync alles autonom.
+
+---
+
+*Stand: 2026-05-20, Patch Hel-Frontend-Separation — `hel.py` 6.576 → 3.604 Zeilen. Inline-CSS + 4 JS-Bloecke (FOUC + Main + GPU-Toast + PWA-SW) extrahiert nach `zerberus/static/css/hel.css` + `zerberus/static/js/hel-*.js`. ADMIN_HTML referenziert die Statics. 16 Source-Audit-Tests via gemeinsamem Helper `_hel_source.py` migriert; `hel_js_paths()`-Tests fuer `node --check`; 9 Anti-Regress-Tests in `test_hel_frontend_separation.py`. **0 neue Regressions** (Baseline 45/3392 → 45/3401 via `git stash`-Diff verifiziert, +9 Anti-Regress-Tests). Nala-Blueprint reproduziert sich.*
+
