@@ -1,806 +1,121 @@
-# CLAUDE_ZERBERUS.md – Zerberus Pro 4.0
+# CLAUDE_ZERBERUS.md — Zerberus Pro 4.0 (Kern-Bibel)
 
-## Regel 0 — OBERSTES GEBOT: Chris terminalisiert NICHTS was Coda kann (P-umzug, 2026-05-16)
-- **Coda fuehrt jede Operation SELBST aus die ueber das Terminal moeglich ist.** NIEMALS `git`/`pytest`/`pip`/`robocopy`/`venv`/`spacy`/`python`/`gh`-Befehle an Chris delegieren. Coda hat Shell + Bash + PowerShell — also macht Coda es.
-- **Coda merged Branches SELBST auf main und pusht SELBST vor Session-Ende.** Ein Worktree-Branch bleibt nicht offen "damit Chris den merge macht". `git merge --ff-only` + `git push origin main` gehoeren in die Coda-Verantwortung, nicht in eine Mjoelnir-Liste.
-- **`mjolnir.md` enthaelt NUR was physisch unmoeglich ist fuer Coda:** echtes Geraet (iPhone/Tablet), Touch-UX-Gefuehl, Browser-Login-Flow am realen Endpunkt, Tailscale vom Mobilgeraet, Whisper-Spracheingabe am Mikrofon, Docker-Desktop-UI-Klicks, Hardware-Abhaengiges (Drucker, Webcam). KEIN `git`, KEIN `pytest`, KEIN `pip install`.
-- **Der Supervisor (Chat-Fenster) gibt Chris ebenfalls KEINE Terminal-Befehle, sondern baut Coda-Prompts.** Wenn der Supervisor versucht zu sagen "Chris mach jetzt mal X im Terminal" → das ist die selbe Verletzung, nur eine Ebene hoeher.
-- **Verstoss = Session-Abbruch + Korrektur.** Wenn Coda merkt dass er gerade Terminal-Arbeit an Chris delegiert hat → STOPP, zurueck-rollen, selbst machen. Kein "ich hab schon den Prompt geschrieben, jetzt isses zu spaet".
-- **Warum:** Chris hat Coda genau dafuer da — die mechanische Terminal-Arbeit. Delegation an Chris bricht den Kontrakt und macht den Coda-Agent zu einem teuren Ratgeber statt einem Mitarbeiter. Verankerung an dieser Stelle (Regel 0, vor allem anderen) ist Backstop gegen Drift: wer den Marathon-Workflow liest, sieht das Gebot zuerst.
+> **mw-v2b Paket 2 (2026-05-21):** Diese Datei enthaelt nur noch den Kern (OBERSTES GEBOT + Faulheits-Catches + Workflow). Task-spezifische Regeln in [`playbooks/`](playbooks/), pfadspezifische Regeln in [`docs/claude_rules/`](docs/claude_rules/) (opt-in via Variante A/B). Patch-Historie P155-P217 per `python scripts/lessons_lookup.py --task '<Stichwort>'`.
 
-## Autonome Prioritätsliste — Coda fragt nicht "wie weiter?" (FR-AUTONOME-PRIORITÄT — Prozess-Regel)
-- **AUTONOME-PRIORITÄT** | Wenn alle Phasen-Ziele ✅ und kein expliziter nächster Schritt vom User: 1) Doku-Catchup wenn ≥3 Patches ohne SUPERVISOR/PROJEKTDOKU/huginn_kennt_zerberus-Update → Doku nachholen + Huginn-RAG-Sync | 2) Offene Schulden aus HANDOVER-Liste (pre-existing Failures, Folgebugs mit eigenem Patch) → kleinsten zuerst | 3) WORKFLOW.md prüfen ob nächste Phase-Ziele definiert → erste Ziele angehen | 4) Wenn nichts davon zutrifft → in HANDOVER dokumentieren "Wartet auf Phase-Spec vom User" und STOPPEN
-- **NIEMALS den User fragen "wie möchtest du weitermachen"** wenn die Antwort aus HANDOVER+WORKFLOW ableitbar ist
-- **"Wie möchtest du weitermachen?" ist nur erlaubt wenn:** User-Entscheidung mit echtem Architektur-Risiko nötig ist (Scope-Sprengung, irreversible Änderung) ODER keine der vier Regeln oben greift
+## Regel 0 — OBERSTES GEBOT: Chris terminalisiert NICHTS was Coda kann
 
-## Destruktive Operationen — Pflicht-Stopp (ab sofort, alle Patches)
+- **Coda fuehrt jede Operation SELBST aus die ueber das Terminal moeglich ist.** NIEMALS `git`/`pytest`/`pip`/`robocopy`/`venv`/`spacy`/`python`/`gh`-Befehle an Chris delegieren. Coda hat Shell + Bash + PowerShell.
+- **Coda merged Branches SELBST auf main und pusht SELBST vor Session-Ende.** `git merge --ff-only` + `git push origin main` gehoeren in die Coda-Verantwortung, nicht in eine Mjoelnir-Liste.
+- **`mjolnir.md` enthaelt NUR was physisch unmoeglich ist fuer Coda:** echtes Geraet, Touch-UX-Gefuehl, Browser-Login am realen Endpunkt, Tailscale vom Mobilgeraet, Whisper-Spracheingabe am Mikrofon, Docker-Desktop-UI-Klicks, Hardware. KEIN `git`, KEIN `pytest`, KEIN `pip install`.
+- **Supervisor (Chat) gibt Chris ebenfalls KEINE Terminal-Befehle, sondern baut Coda-Prompts.**
+- **Verstoss = Session-Abbruch + Korrektur.** Wenn Coda merkt dass er gerade Terminal-Arbeit an Chris delegiert hat → STOPP, zurueck-rollen, selbst machen.
+- **Warum:** Delegation an Chris bricht den Kontrakt und macht Coda zu einem teuren Ratgeber statt einem Mitarbeiter.
 
-HINTERGRUND: Zwei dokumentierte Vorfälle (DataTalks.Club März 2025, PocketOS Mai 2026)
-zeigen — Claude Code führt Befehle aus die logisch aus dem Kontext folgen, ohne
-Bauchgefühl. Kein Zögern, kein "bin ich sicher?". Das ist die Architektur.
-Schutz kommt nur durch explizite Regeln, nicht durch Vorsicht.
+## Autonome Prioritaetsliste — Coda fragt nicht „wie weiter?"
 
-PFLICHT-STOPP vor jeder dieser Operationen — auch im Marathon, auch wenn logisch:
-- Dateisystem: rm -rf|rmdir|del /s|shutil.rmtree|os.remove auf Datenbankdateien
-- SQLite/DB: DROP TABLE|DROP DATABASE|DELETE FROM ohne WHERE|TRUNCATE
-- FAISS: faiss.write_index (überschreibt)|Index-Reset ohne .bak-Sicherung
-- Docker: volume rm|container rm -v|docker system prune
-- Git: git push --force|git reset --hard (auf main)|branch -D
-- Allgemein: destroy|nuke|wipe|purge|overwrite in Skriptnamen oder Kommentaren
+Wenn alle Phasen-Ziele ✅ und kein expliziter naechster Schritt vom User: 1) Doku-Catchup wenn ≥3 Patches ohne SUPERVISOR/PROJEKTDOKU/huginn-Update → nachholen + Huginn-RAG-Sync | 2) Offene Schulden aus HANDOVER (kleinsten zuerst) | 3) WORKFLOW.md pruefen ob naechste Phase-Ziele definiert | 4) Sonst in HANDOVER „Wartet auf Phase-Spec" + STOPP.
 
-STOPP bedeutet: Coda beschreibt WAS er tun will + WAS dabei verloren geht +
-fragt explizit: "Bestätigung?" — BEVOR der Befehl ausgeführt wird.
-Ausnahme: .bak-Dateien anlegen ist kein Stopp-Kandidat (sichert, löscht nicht).
+NIEMALS „wie moechtest du weitermachen?" fragen, wenn aus HANDOVER+WORKFLOW ableitbar. Ausnahme nur bei echtem Architektur-Risiko (Scope-Sprengung, irreversible Aenderung).
 
-BACKUP-MUSTER (Pflicht bei Index/DB-Operationen):
-- Vor Überschreiben: <datei>.<grund>_<UTC-Timestamp>.bak anlegen (P217-Pattern)
-- Nie silent overwrite|immer Audit-Spur|.bak liegt neben Original
+## Faulheits-Catches (Pflicht — alle 6)
 
-SQLITE-BACKUP (Coda richtet einmalig ein, Patch nach Bedarf):
-- Ziel: bunker_memory.db + alle weiteren *.db täglich per Cronjob sichern
-- Zielpfad: separates Verzeichnis oder separate Partition (nicht selbes Volume)
-- Cronjob-Skript in scripts/backup_db.ps1 (Windows Task Scheduler)
-- Fehler im Backup → WARNING-Log, kein Server-Absturz
+### 1. Destruktive Operationen — Pflicht-Stopp
+Vor `rm -rf` | `DROP TABLE` | `faiss.write_index` | `volume rm` | `git push --force` | `git reset --hard` (main) | `branch -D` | Skripte mit `destroy`/`nuke`/`wipe`/`purge`/`overwrite`: STOPP, beschreiben was passiert, „Bestaetigung?" abwarten. Detail + Backup-Muster: [`playbooks/database.md`](playbooks/database.md), pfad-getriggerte Regel: [`docs/claude_rules/destructive_ops.md`](docs/claude_rules/destructive_ops.md).
 
-FAISS-BAK-MUSTER (bereits in P217, hier als Standard festgeschrieben):
-- Vor jedem Index-Reset oder Dimension-Resync: <index>.dim_mismatch_<dim>_<UTC>.bak
-- Gilt auch für manuelle Reindex-Operationen (S-03, P213-pre-3)
-- .bak-Dateien werden NICHT versioniert (in .gitignore)
+### 2. Deliverable-Smoke (Pflicht)
+Kein Deliverable ohne funktionalen Smoke. HTML/JSON/Script → Datei oeffnen/parsen/Ergebnis pruefen VOR Patch-Abschluss. „Syntax valide" ≠ Smoke. Fehlende Smoke = Patch NICHT abgeschlossen. Anlass: Feature-Audit-HTML (Post-P-debt-12) hatte valides JS aber kaputtes inline-JSON — User sah leere Seite.
 
-LESSON (aus PocketOS/DataTalks-Vorfällen):
-Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
-→ Schutz = explizite Regeln + HitL-Gate + Backup, nicht Vorsicht
+### 3. Loki / Fenrir / Vidar — Pflicht-Lauf
+Bei JEDEM Patch der UI / Auth / Chat-Pipeline / RAG / Guard / Huginn / Endpoint anfasst: Server via `start_stable.bat`, dann Vidar → Loki → Fenrir mit `-m e2e`. Failures = Blocker. Detail: [`playbooks/testing.md`](playbooks/testing.md).
 
-## Loki / Fenrir / Vidar — Pflicht-Lauf bei jedem UI-/Auth-/Pipeline-Patch (P215 — Prozess-Regel)
-- **Bei JEDEM Patch der UI, Auth, Chat-Pipeline, RAG, Guard, Huginn oder einen Endpoint anfasst** → Server starten via [`start_stable.bat`](start_stable.bat) und ALLE drei Playwright-Suiten gegen den Live-Server ausfuehren|Reihenfolge: 1) **Vidar** (Smoke, Go/No-Go ~60s) `pytest zerberus/tests/test_vidar.py -m e2e`, 2) **Loki** (E2E) `pytest zerberus/tests/test_loki.py zerberus/tests/test_loki_mega_patch.py -m e2e`, 3) **Fenrir** (Chaos) `pytest zerberus/tests/test_fenrir.py zerberus/tests/test_fenrir_mega_patch.py -m e2e`|Failures = Blocker — kein Push ohne gruene Suiten ODER dokumentierten Skip-Grund mit Ticket-/Schulden-Verweis
-- **`-m e2e` ist Pflicht** — pytest.ini deselektiert e2e/integration im Default-Run, ohne Marker laufen die Tests nicht (alle Vidar/Loki/Fenrir-Module tragen `pytestmark = pytest.mark.e2e`)
-- **HTML-Report bei Sweeps** unter [`zerberus/tests/report/full_report.html`](zerberus/tests/report/full_report.html) ueber `--html=zerberus/tests/report/full_report.html --self-contained-html` — fuers Onboarding der naechsten Coda-Instanz und als Audit-Spur des Patches
-- **Ausnahmen — wann NICHT laufen lassen:** reine Doku-Patches (kein Code), reine Test-Patches (kein App-Code), Pure-Function-Patches ohne Server-Einfluss (z.B. neue Konstante in `zerberus/core/scheduler_tasks.py`). Alles andere: Loki/Fenrir/Vidar laufen mit
-- **„Chris muss UI testen" ist NUR erlaubt fuer:** Touch-Gefuehl, echtes Geraet, subjektive UX. NICHT erlaubt fuer funktionale Checks die Playwright abdeckt (Login, Chat-Roundtrip, Settings-Modal, Touch-Targets, JS-Fehler, Sandbox-Render, HSL-Slider, Burger-Sidebar, TTS-Button, Pacemaker)
-- **Server-Restart-Pflicht bei CSS-/HTML-Aenderung:** [`start_stable.bat`](start_stable.bat) hat KEIN `--reload` (P213-pre-4-Pflicht fuer Coda-Sessions/manuelle-Tests/Sync-Tool-Tests), also muss der Server nach Aendern von `zerberus/app/routers/nala.py` oder `hel.py` ausdruecklich neu gestartet werden, sonst sieht Playwright die alte HTML/CSS-Version
-- **Gestern-stabil-Falle:** dass die Suiten gestern gruen waren ist KEIN Beweis dass sie heute noch gruen sind — UI driftet still (Selektor-Renames, CSS-Werte, Template-Strukturen). Daher Pflicht-Lauf bei JEDEM relevanten Patch, nicht nur bei „grossen" Aenderungen
-- **Nachhol-Sweep P215** ist erfolgt: 30 Touch-Target-Violations geloest durch CSS-Fix `.hamburger`/`.session-pin-btn`/`.sidebar-action-btn` auf 44x44 Mobile-Invariante|6 veraltete Selektoren angepasst (`.icon-btn[aria-label='Einstellungen']` → `.sidebar-footer-cog` via offene Sidebar)|2 veraltete Bubble-Width-Werte aktualisiert (90%→92% mobile, 75%→80% desktop)|2 Tests als Skip-mit-Schulden markiert (Pacemaker-Master-Toggle UI-Drift, TTS-Race-Condition disabled-Input). Resultat: Vidar 19/21 (1 Schuld), Loki 41/45 (4 cosmetic Skips), Fenrir 37/39 (2 dokumentierte Skips)
+### 4. Auto-Test-Policy & Integration-Test-Pflicht
+Alles was Coda testen kann → Coda testet. Vor jedem „Chris muss noch testen"-Vermerk gilt: kann ich das selbst testen? JA → Integration-Test schreiben, NICHT eskalieren. Detail: [`playbooks/testing.md`](playbooks/testing.md).
 
-## Wiederkehrende Jobs / Scheduler — Sandbox-Anbindung kind=shell (P214-pre-3 — Phase 5a Ziel #14 ABGESCHLOSSEN)
-- **`_execute_kind_shell(task: ScheduledTask)`** in [`zerberus/modules/scheduler/runner.py`](zerberus/modules/scheduler/runner.py)|Cron-getriebener Shell-Run via Docker-Sandbox|Pfad: 1) `should_snapshot_shell_run`-Gate (project_id Pflicht — Workspace-Mount erforderlich), 2) `snapshot_workspace_async(label="sched214-before-<id8>")` (P207, fail-CLOSED — Pre-Snapshot-Crash lehnt Run ab), 3) `execute_in_workspace(language="bash", writable=True, project_id, base_dir)` (P203c — kein direkter SandboxManager-Call, sonst Path-Sicherheits-Check umgangen), 4) `snapshot_workspace_async(label="sched214-after-<id8>", parent_snapshot_id=before["id"])` (best-effort), 5) `format_shell_output` + `is_shell_run_successful`|Defense-in-Depth: Sandbox-Isolation (P171: --network none, read-only Root, no-new-privileges, PID/Memory/CPU-Limits) + Workspace-Mount (P203c) + Path-Check (`is_inside_workspace`) + Secrets-Filter (P212 stdout/stderr maskiert) + Pre-Snapshot-Anker (P207)
-- **Pure-Function-Erweiterungen** in [`zerberus/core/scheduler_tasks.py`](zerberus/core/scheduler_tasks.py)|`SHELL_SANDBOX_LANGUAGE="bash"` (Konstante fuer SandboxManager-Aufruf)|`should_snapshot_shell_run(task) -> (ok, err)`: shell braucht project_id (sonst kein Workspace, sonst kein Snapshot, sonst Defense-in-Depth gebrochen)|`format_shell_output(*, exit_code, stdout, stderr, execution_time_ms, sandbox_error, truncated)`: Header `[SCHED-214 shell exit=N took=Mms[ truncated][ sandbox_error=...]]\n--- STDOUT ---\n...\n--- STDERR ---\n...`|`is_shell_run_successful(*, exit_code, sandbox_error)`: nur exit==0 + kein sandbox_error
-- **SandboxConfig.bash_image** in [`zerberus/core/config.py`](zerberus/core/config.py)|Default `"debian:bookworm-slim"` (bash-faehig, ~80MB)|`SandboxManager._image_and_command` mappt `language=="bash"` auf `(bash_image, ["bash", "-c", code])`|`healthcheck()` checkt bash_image wenn `"bash"` in `allowed_languages`|Operator muss bewusst opt-in: bash zu `allowed_languages` hinzufuegen UND `bash_image` ziehen — sonst lehnt Sandbox mit "Sprache nicht erlaubt"/"Kein Image..." ab. Beabsichtigt: Shell-Cron-Runs sind ein neues Risiko-Profil (Build/Test/Log statt nur Code-Snippet) und werden nicht stillschweigend aktiviert
-- **Tests** P214-pre-3: 43 Unit + Source-Audits in [`test_p214_pre_3_scheduler_shell.py`](zerberus/tests/test_p214_pre_3_scheduler_shell.py) (TestShouldSnapshotShellRun / TestFormatShellOutput / TestIsShellRunSuccessful / TestShellSandboxLanguageConstant / TestSandboxConfigBashImage / TestSandboxManagerBashCommand / TestRunnerShellPathSourceAudit / TestSandboxManagerBashSourceAudit / TestSmoke). Plus 3 Integration-Tests in `test_integration_p214_scheduler.py` (`TestShellPathExecution`, default-deselected, live grün via `pytest -m integration -k p214_scheduler`): Happy-Path mit gemocktem `snapshot_workspace_async` + `execute_in_workspace` (writable=True + bash + project_id verifiziert), Sandbox-Error → audit-error mit `sandbox_error=Timeout` im Output, Pre-Snapshot=None → `execute_in_workspace` wird NICHT aufgerufen (Sicherheitspfad-Test)
-- **Phase 5a Ziel #14 zu 100% durch.** Alle drei kind-Pfade (notice/prompt/shell) sind voll funktional, jeder mit eigener Defense-in-Depth-Schicht: notice = pure Audit-Eintrag, prompt = LLM mit Persona+RAG (P214-pre-2), shell = Docker-Sandbox mit Snapshot-vor-Run (P214-pre-3)
-- **Bekannte Schulden** P214-pre-3: Reindex-Endpoint (P213-pre-3) noch transaktional zu machen, SUPERVISOR/PROJEKTDOKU/huginn_kennt_zerberus tragen P214-pre-1/-pre-2/-pre-3 noch nicht (Doku-Catchup als eigener Patch)
+### 5. Pflicht nach jedem Patch
+SUPERVISOR_ZERBERUS.md aktualisieren (Nr | Datum | 3-5 Zeilen). Offene Items pflegen. PROJEKTDOKUMENTATION.md anhaengen (Patch-Nr+Titel | Datum | Was | Dateien | Teststand). [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur aktualisieren + via RAG-Upload nach Hel pushen. Detail: [`playbooks/rag_pipeline.md`](playbooks/rag_pipeline.md).
 
-## Wiederkehrende Jobs / Scheduler — UI + LLM-Anbindung (P214-pre-2 — Phase 5a Ziel #14, Forts.)
-- **Hel-UI Tab "Scheduler"** in [`zerberus/app/routers/hel.py`](zerberus/app/routers/hel.py)|Liste aller Tasks mit Name/Cron/Kind/Projekt/letzter Lauf/Status + Aktionen (Jetzt-laufen / Edit / Loeschen) + Form-Overlay zum Anlegen/Editieren mit Cron-Beispielen + Lauf-Historie pro Task (`schedRunsCard`, Top-20 mit Output-/Error-Preview)|P203b-Pattern: data-Attribute + `addEventListener` statt inline `onclick=` (Quote-Verschachtelung-Schutz, Test `test_alle_inline_scripts_parsen` greift)
-- **Auth-gated CRUD-Endpoints** in `hel.py` unter `/hel/admin/scheduled-tasks/*`|`GET` (mit payloads — UI braucht's fuers Edit-Formular), `POST` (validate→build_task_record→insert→register_task), `PATCH /{task_id}` (validate_task_update + apply_task_update + re-register_task), `DELETE /{task_id}` (unregister_task + DB-Delete; Lauf-Historie bleibt per task_id-Soft-Link), `GET /{task_id}/runs?limit=N` (Top-N Lauf-Historie via `build_run_history_entry`)|Logging-Tag `[SCHED-214]` durchgaengig
-- **LLM-Anbindung fuer `kind=prompt`** in [`zerberus/modules/scheduler/runner.py`](zerberus/modules/scheduler/runner.py)|`_execute_kind_prompt(task: ScheduledTask)` (Signatur-Aenderung von `(payload: str)` auf `(task)` — alle Handler bekommen jetzt das ganze DB-Row, damit `project_id` mit drin ist)|Pfad: `resolve_project_overlay(project_id)` (Persona-Layer P197) → slug → `query_project_rag(project_id, payload, base_dir, k=5)` (P199 RAG, defensiv, Crash-tolerant) → `format_rag_block(hits, project_slug)` → `build_prompt_messages(payload, project_slug, rag_context)` → `LLMService.call(messages, session_id="sched214-<task_id>")`|Output-Format `[SCHED-214 prompt model=X pt=Y ct=Z cost=$.6f]\\n<answer>` — Token-Counts + Kosten landen im Audit
-- **`build_prompt_messages` in scheduler_tasks.py**|Pure-Function|System-Message: Cron-Preamble (`Kein User da, schreib eine selbsterklaerende Notiz, keine Rueckfragen`) + optional Projekt-Slug + RAG-Block|User-Message: payload-Text|`LLMService` setzt zusaetzlich seinen System-Prompt davor (Stack: Scheduler-Preamble → Projekt-RAG → User-Persona-System → Task-Payload)
-- **Update-Validation** `validate_task_update(updates, *, current_kind)` + `apply_task_update(updates)` in scheduler_tasks.py|Whitelist `_UPDATABLE_TASK_FIELDS = (name, cron_expression, kind, payload, enabled, project_id)` — Mass-Assignment-Schutz|`current_kind` noetig fuer payload-Validation wenn nur payload geupdatet wird|`apply_task_update` macht Bool→0/1, strip Strings — Voraussetzung: validate vorher mit Erfolg
-- **Run-History-View** `build_run_history_entry(...)` mit `DEFAULT_HISTORY_PREVIEW_BYTES=400` — schmaler View pro `ScheduledTaskRun`-Zeile, truncatet `output`/`error_message` separat, fuer UI-Liste gedacht (vollen Output gibt's nur ueber den DB-Read direkt)
-- **Tests** P214-pre-2: 35 Unit + Source-Audits in [`test_p214_pre_2_scheduler_ui.py`](zerberus/tests/test_p214_pre_2_scheduler_ui.py) (TestValidateTaskUpdate / TestApplyTaskUpdate / TestBuildPromptMessages / TestBuildRunHistoryEntry / TestSchedulerUiSourceAudit / TestSchedulerCrudSourceAudit / TestRunnerPromptPathSourceAudit / TestSmoke). Plus 3 Integration-Tests fuer den prompt-Pfad in `test_integration_p214_scheduler.py` (`TestPromptPathExecution` mit `unittest.mock.patch` auf `LLMService.call` — kein echter OpenRouter-Call): LLM-Antwort landet im Output, leerer payload → error, LLM-Fehler-String → error-Audit
-- **Bekannte Schulden** P214-pre-2: `kind=shell` weiter Stub (P214-pre-3 Sandbox-Anbindung), Reindex-Endpoint (P213-pre-3) noch transaktional zu machen, SUPERVISOR/PROJEKTDOKU/huginn_kennt_zerberus tragen P214-pre-2 noch nicht
-
-## Wiederkehrende Jobs / Scheduler (P214 — Phase 5a Ziel #14 — Backend-Skelett P214-pre-1)
-- Per-Task-Cron-Jobs: User definiert pro Projekt (oder global) wiederkehrende Tasks, das System fuehrt sie aus und schreibt Audit-Trail. Kind-Whitelist `prompt`/`shell`/`notice` mit `payload`-Body|Cron-Format: 5-Felder Standard-Cron (`minute hour day_of_month month day_of_week`)|task_id ist UUID4-hex (32 chars), nicht Integer-PK — Cross-Session-Defense analog HitL/Reasoning (P206/P213)
-- **Pure-Function-Schicht** in [`zerberus/core/scheduler_tasks.py`](zerberus/core/scheduler_tasks.py): `CronSpec`-Dataclass + `parse_cron_expression`/`validate_cron_expression` (5-Felder, Range-Check) + `validate_task_kind`/`validate_task_status`/`validate_task_trigger` (Whitelists) + `validate_task_payload`/`validate_task_name` + `validate_task_dict` (Top-Level) + `truncate_output` (Bytes-genau, analog P213/P209) + `build_task_record`/`build_run_record` (Defaults + Truncation) + `should_allow_manual_run` (Pre-Endpoint-Check)|KEIN APScheduler-Import dort — pure Validation, sonst Test-Pfad-Crash bei fehlender Library
-- **Loader/Runner** in [`zerberus/modules/scheduler/runner.py`](zerberus/modules/scheduler/runner.py): `TaskScheduler`-Klasse als Wrapper um den existierenden `AsyncIOScheduler` (P57 Overnight)|`reload_from_db()` liest enabled Tasks und registriert sie als Cron-Jobs|`register_task`/`unregister_task` fuer CRUD-Folgepatches|`execute_task(task_id, trigger="cron"|"manual"|"boot")` als High-Level-Run mit Audit-Schreibung + Snapshot-Update|Module-Singleton `_task_scheduler` mit `get_task_scheduler`/`set_task_scheduler`-Pattern|`initialize_task_scheduler(apscheduler)` als Lifespan-Hook
-- **Kind-Dispatch-Tabelle** `_KIND_DISPATCH = {"notice": ..., "prompt": ..., "shell": ...}`. P214-pre-1 hat nur `notice` voll funktional — die anderen sind klar dokumentierte Stubs (LLM-Pipeline kommt in P214-pre-2 / P214-pre-3, Sandbox-Run muss durch P171/P203c-Manager)
-- **Audit-Tabelle** `scheduled_task_runs` schreibt nur Endzustaende (`done|error|skipped|running`-running ist transient nicht persistiert), Spalten: `run_id` UUID4 + `task_id` + `started_at`/`finished_at` + `status` + `output`/`error_message` (truncated `DEFAULT_OUTPUT_MAX_BYTES=4096`) + `duration_ms` + `trigger` (cron|manual|boot)
-- **Endpoints auth-frei** in [`zerberus/app/routers/legacy.py`](zerberus/app/routers/legacy.py) (Dictate-Lane): `GET /v1/scheduled-tasks?project_id=N` (Lese-Liste, KEINE payloads ausgespiegelt aus Sicherheitsgruenden), `POST /v1/scheduled-tasks/{task_id}/run` (manueller Trigger, ruft `execute_task(task_id, trigger="manual")`, schreibt Audit-Zeile mit `trigger="manual"`)|CRUD-Schreib-Endpoints kommen in P214-pre-2 (auth-gated unter `/hel/admin/scheduled-tasks/*`)
-- **Late-Binding** auf `_async_session_maker`: Runner liest `_db_mod._async_session_maker` zur Laufzeit (nicht `from ... import` zur Modul-Lade-Zeit) — wichtig fuer Test-Patches in Integration-Tests, sonst snapshotted Python die `None`-Referenz beim ersten Import
-- **DB-Schema-Pflicht** in [`zerberus/core/database.py`](zerberus/core/database.py): `ScheduledTask` mit `task_id` UUID4 + `project_id` (nullable, FK-Logik im Repo nicht im Model) + `enabled` (Integer-Bool) + Lauf-Snapshot-Felder `last_run_at`/`last_status`/`next_run_at`. `ScheduledTaskRun` als Audit-Trail mit Status-Whitelist
-- **Tests** P214-pre-1: 76 Unit + Source-Audits in [`test_p214_scheduler_tasks.py`](zerberus/tests/test_p214_scheduler_tasks.py) (TestParseCronExpression / TestValidateCronExpression / Whitelist-Validatoren / TestValidateTaskDict / TestTruncateOutput / Build-Helper / TestRunnerSourceAudit / TestEndpointSourceAudit / TestMainPyHookupSourceAudit / TestDbModelSourceAudit / TestSmoke). Plus 7 Integration-Tests in [`test_integration_p214_scheduler.py`](zerberus/tests/test_integration_p214_scheduler.py) (P213-pre-6-Pflicht): Insert→execute_task→Audit-Loop, unbekannte task_id, Stub-Behavior, reload_from_db mit 0/1 Task, disabled-skip, unregister-after-register
-
-## Reasoning-Schritte sichtbar im Chat (P213 — Phase 5a Ziel #13 ABGESCHLOSSEN)
-- Neues Modul [`zerberus/core/reasoning_steps.py`](zerberus/core/reasoning_steps.py) mit Pure-Function-Schicht|`compute_step_duration_ms(started, finished) -> int|None` (None bei laufendem Step, sonst Millisekunden, clamped >= 0)|`should_emit(kind, *, enabled, disabled_kinds)` Trigger-Gate (globaler Kill-Switch + per-kind Opt-out + Whitelist `KNOWN_STEP_KINDS={spec_check, rag_query, veto_probe, hitl_wait, sandbox_run, synthesis, embedder, reranker, guard, llm_call}`)|`truncate_text(text, *, max_bytes)` Bytes-genau mit Ellipsis-Marker `…` und Unicode-safe-Cut|`KNOWN_STATUSES={running, done, error, skipped}`|Konstanten: `DEFAULT_BUFFER_PER_SESSION=32`, `DEFAULT_SESSION_TTL_SECONDS=600`, `DEFAULT_POLL_TIMEOUT_SECONDS=10.0`, `SUMMARY_MAX_BYTES=200`, `DETAIL_MAX_BYTES=1000`
-- `ReasoningStep`-Dataclass|Felder: `step_id` (UUID4-hex), `session_id`, `kind`, `summary`, `started_at`, `status` (Default `running`), `finished_at`, `detail` (Audit-only)|`duration_ms` als computed property|`to_public_dict()` schmal: KEIN session_id, KEIN detail (Audit-only) — nur `step_id`/`kind`/`summary`/`status`/`duration_ms`/`started_at`/`finished_at` fuer Frontend
-- `ReasoningStreamGate`-Singleton (analog `ChatHitlGate` aus P206 + `GpuQueue` aus P211)|Per-Session-FIFO-Buffer: `emit(*, session_id, kind, summary, detail) -> ReasoningStep|None` ist sync (kein await im Hot-Path) — Step landet im Buffer, Caller faehrt weiter|`mark_done(step_id, *, status, detail)` idempotent (Doppel-Mark gewinnt der erste, invalid-status returnt None ohne Crash)|`list_for_session(session_id)` als Snapshot, `cleanup_session` + `cleanup_stale_sessions(*, now)` als TTL-Sweep|`consume_steps(session_id, *, wait_seconds)` async, blockt long-poll-style bis ein neuer Step kommt ODER der Timeout greift
-- Convenience `emit_step(session_id, kind, summary, *, detail)` und `mark_step_done(step, *, status, detail)`|`mark_step_done` akzeptiert sowohl `ReasoningStep`-Objekt als auch None — damit der Aufrufer unbedingt schreiben kann `_step = emit_step(...); ...; mark_step_done(_step)` ohne Null-Check, falls das Trigger-Gate emit ablehnte (unbekannter kind, fehlende session_id)
-- Sync-emit + async-audit-Asymmetrie|`mark_step_done` checkt `asyncio.get_running_loop()` — wenn Loop verfuegbar: `loop.create_task(_audit_step(result))` als Hintergrund-Task|wenn kein Loop (sync-Test): Coroutine wird GAR NICHT erst erzeugt (sonst RuntimeWarning "coroutine was never awaited")|fail-open: jeder Audit-Crash wird geloggt + verschluckt, Hauptpfad blockiert nie
-- Neue DB-Tabelle `reasoning_audits` in [`database.py`](zerberus/core/database.py)|Spalten: `id` (PK), `step_id` (UUID4 INDEX), `session_id` (INDEX), `kind` (INDEX), `status` (INDEX, done|error|skipped — `running` wird NICHT geschrieben), `duration_ms`, `summary`, `detail`, `created_at`|persistente Spur fuer Latenz-Tuning: `SELECT kind, AVG(duration_ms), MAX(duration_ms), COUNT(*) FROM reasoning_audits WHERE status='done' GROUP BY kind` zeigt wo das System Zeit verbringt
-- Zwei neue auth-freie Endpoints in [`legacy.py`](zerberus/app/routers/legacy.py)|`GET /v1/reasoning/poll?wait=N` — auth-frei (Dictate-Lane-Invariante), liefert `{"steps": [...]}` als JSON-Array fuer die Session aus `X-Session-ID`-Header, `wait` auf `[0, DEFAULT_POLL_TIMEOUT_SECONDS=10]` geclamped um abusive Long-Polls zu verhindern, Best-Effort-Sweep aelterer Sessions bei jedem Poll|`POST /v1/reasoning/clear` — wirft die Steps der Session weg, idempotent (leerer Buffer ist OK)
-- Verdrahtung in 7 Pipeline-Stellen in `chat_completions` (legacy.py)|Turn-Reset: `get_reasoning_gate().cleanup_session(session_id)` beim Eintritt — defensive falls das Frontend den `POST /clear` nicht mehr schafft|Projekt-RAG: `emit_step("rag_query", "Projekt-RAG durchsucht (<slug>)")` vor `query_project_rag`, mark_done mit `chunks=N`-Detail|Spec-Check: `emit_step("spec_check", "Frage prueft auf Mehrdeutigkeit")` nur wenn `should_ask_clarification` greift, mark_done `done`/`skipped`|LLM-Call: `emit_step("llm_call", "Modell formuliert Antwort")` mit try/except, mark_done `error` bei Crash, im Fallback und Direct-Pfad analog|Veto-Probe: `emit_step("veto_probe", "Zweites Modell prueft Code")` vor `run_veto`, mark_done abhaengig vom Verdict (`pass`/`error` bei `veto`/`error` bei error)|HitL-Wartezeit: `emit_step("hitl_wait", "Wartet auf Bestaetigung")` vor `wait_for_decision`, Status-Mapping `approved`/`bypassed` → `done`, `rejected`/`timeout` → `skipped`, sonst `error`|Sandbox-Run: `emit_step("sandbox_run", "Sandbox laeuft (<lang>)")` vor `execute_in_workspace`, mark_done `done`/`error` (exit_code) oder `skipped` (None-Result)|Synthese: `emit_step("synthesis", "Verstaendliche Antwort wird formuliert")` vor `synthesize_code_output`, mark_done `done`/`skipped` (leerer Output)/`error`
-- Nala-Frontend [`nala.py`](zerberus/app/routers/nala.py)|CSS `.reasoning-card` mit Default-collapsed-State, `.reasoning-toggle` als 44px-Touch-Target (Mobile-first)|`.reasoning-list` ungeordnete Liste mit `.reasoning-step`-Eintraegen|Status-Klassen `.reasoning-running` (animiertes Spin-Icon via `@keyframes reasonSpin`), `.reasoning-done` (Gruen #6cd4a1), `.reasoning-error` (Rot #e57373), `.reasoning-skipped` (Grau #8aa0c0)
-- JS-Funktionen|`startReasoningPolling(abortSignal, snapshotSessionId)` — 4s-Intervall, erster Tick nach 800ms, fail-quiet bei Netzfehler, Auto-Stop wenn die Session wechselt|`renderReasoningSteps(steps)` — Karte beim ersten Step erzeugt, danach in-place Update via `_reasoningStepIndex`-Map (step_id → li-Element)|Status-Icons `⏳`/`✅`/`❌`/`⏭` via `escapeHtml(_reasonIcon(...))`|Summary via `textContent` (XSS-safe, kein innerHTML auf User/LLM-Strings)|Per-Step `data-step-id` + `data-step-kind` als stabile DOM-Keys|Toggle als globale Event-Delegation auf `[data-reasoning-toggle]` (kein onclick-Concat im innerHTML, P203b-Invariante)|`_REASON_KIND_LABELS`-Frontend-Whitelist als Default-Fallback wenn das Backend einen unbekannten Kind liefert
-- Hookup an `sendMessage`|`clearReasoningState()` + `startReasoningPolling(myAbort.signal, reqSessionId)` parallel zu HitL/Spec-Polling|`stopReasoningPolling()` im `finally`-Block (Karte bleibt aber als Audit-Spur stehen)
-- Was P213 NICHT macht: SSE/WebSocket-Streaming (4s-Polling reicht, ~3-5 Polls pro Turn)|Cross-Session-Visibility (jeder User sieht nur seine eigenen Steps via `X-Session-ID`-Filter)|Detail-Drill-Down pro Step (`detail` steht in der Audit-Tabelle, nicht in der Karten-UI)|Replay-Modus fuer alte Sessions (Steps sind transient via In-Memory + TTL-Sweep)|Hel-UI-Auswertung der `reasoning_audits`-Tabelle (eigener Patch P213b)
-- Logging-Tag `[REASON-213]` mit `emit step=... session=... kind=... status=...`/`done step=... session=... kind=... status=... duration_ms=...`/`audit_written step=... session=... kind=... status=... duration_ms=...`/`audit_failed (non-fatal): ...`/`audit_import_failed: ...`/`buffer_overflow session=... removed_kind=...`/`sweep removed_sessions=...`|Worker-Protection-konform: kein User-Content im Log, nur Kind/Status/Duration-Metriken
-- Tests: 57 in [`test_p213_reasoning_steps.py`](zerberus/tests/test_p213_reasoning_steps.py)|17 Klassen: `TestComputeStepDurationMs` (4) / `TestShouldEmit` (4) / `TestTruncateText` (4) / `TestReasoningStep` (3) / `TestStreamGateEmit` (4) / `TestStreamGateMarkDone` (4) / `TestStreamGateBufferCap` (1) / `TestStreamGateCleanup` (2) / `TestStreamGateConsume` (4) / `TestConvenience` (3) / `TestStoreAudit` (1) / `TestLegacyWiring` (4) / `TestReasoningPollEndpoint` (4) / `TestReasoningClearEndpoint` (2) / `TestNalaFrontendReasoningCard` (7) / `TestJsSyntaxIntegrity` (1, skipped wenn node fehlt) / `TestSmoke` (4)|Lokal: 2256 baseline (P212) → **2313 passed** (+57 P213, +0 NEUE Failures)
-- Helper fuer zukuenftige Patches: `ReasoningStep`-Dataclass mit `to_public_dict`-Schmaltrennung (intern/external) klont sich fuer jede neue Telemetrie-Datentyp|Sync-emit + async-audit-Pattern (mit `loop = asyncio.get_running_loop()`-Test-Hatch) ist universell fuer jede Hot-Path-Telemetrie|TTL-Sweep beim Read statt Hintergrund-Task ist die billigere Variante fuer In-Memory-Buffer|Frontend-Polling-Intervall 4s ist der Sweet-Spot fuer Pipeline-Schritte von 4-7s — bei kuerzeren Pipelines auf 2s reduzieren, bei laengeren auf 8s erhoehen
-
-## Zweite Meinung vor Ausfuehrung / Sancho Panza (P209 — Phase 5a Ziel #7 ABGESCHLOSSEN)
-- Neues Modul [`zerberus/core/code_veto.py`](zerberus/core/code_veto.py) mit Pure-Function-Schicht|`should_run_veto(code, language) -> bool` Trigger-Gate (leerer Code → False, trivial-Pattern `^\s*print\(`/`^\s*return\s+`/`^\s*pass\s*$`/`^\s*console\.log\(`/`^\s*var\s*=\s*[\d"'\[\{]` ohne Risk-Token → False, Multiline ODER Risk-Token → True, Borderline-1-Zeiler ohne Trivial-Pattern → True (lieber pruefen))|`_RISKY_TOKENS`-Liste: `subprocess`/`os.system`/`eval(`/`exec(`/`rm -rf`/`unlink`/`shutil.rmtree`/`open(`/`.write(`/`requests.post`/`urllib.request`/`httpx.post`/`fetch(`/`child_process`/`sudo`/`chmod`/`git push --force`/`--no-verify`/`pickle.load`/`yaml.load(`/`fs.unlink`|`build_veto_messages(code, language, user_prompt) -> List[dict]` baut zwei-Element-Liste mit `VETO_SYSTEM_PROMPT` der GENAU "PASS" oder "VETO" am Anfang verlangt, plus optional Begruendung im selben String|`parse_veto_verdict(text) -> VetoVerdict` mit Regex `^[\s"'`*_]*(PASS|VETO)\b\s*[:\-—]?\s*(.*)$` robust gegen Whitespace/Quotes/Markdown-Bold/Doppelpunkte/Bindestriche, plus First-Line-Match + Multi-Line-Reason + 64-char-Window-Fallback wenn First-Line nicht matchet|Konstanten: `VETO_CODE_MAX_BYTES=4000` (Code im Prompt), `VETO_REASON_MAX_BYTES=400` (User-sichtbare Begruendung), `AUDIT_MAX_TEXT_BYTES=8000` (DB-Truncate), `DEFAULT_VETO_TEMPERATURE=0.1`
-- Async-Wrapper `run_veto(code, language, user_prompt, llm_service, session_id, *, temperature=0.1) -> VetoVerdict`|ruft `llm_service.call` mit `temperature_override=temperature`|fail-open auf jeder Stufe: LLM-Crash → `VetoVerdict(veto=False, error="llm_call_failed: ...")`|Non-Tuple → `VetoVerdict(veto=False, error="unexpected_type")`|leere/Non-String-Antwort → `VetoVerdict(veto=False, error="empty_response")`|`latency_ms` per `datetime.utcnow()`-Diff
-- VetoVerdict-Dataclass|Felder: `veto: bool`, `reason: str`, `raw: Optional[str]`, `latency_ms: Optional[int]`, `error: Optional[str]`|`to_payload_dict() -> {"vetoed": bool, "reason": str, "latency_ms": int|None}` als Frontend-Schema
-- Neue DB-Tabelle `code_vetoes` in [`database.py`](zerberus/core/database.py)|Spalten: `id` (PK), `audit_id` (UUID4 hex INDEX, eigene ID statt HitL-Pending-Korrelation), `session_id`, `project_id` (INDEX), `project_slug`, `language`, `code_text`, `user_prompt`, `verdict` (`pass|veto|skipped|error` INDEX), `reason`, `latency_ms`, `created_at`|persistente Spur fuer System-Prompt-Tuning + Threshold-Anpassung (wie oft greift Veto, wie oft falsch-positiv, wie oft falsch-negativ)|`store_veto_audit(...)` Best-Effort, jeder Fehler wird geloggt + verschluckt
-- Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py) zwischen `first_executable_block` und HitL-Pending-Erzeugung|bei `code_veto_enabled=True` UND `should_run_veto(code, language)=True` faehrt `run_veto(...)` mit `settings.projects.code_veto_temperature` (Default 0.1)|drei Decision-Pfade: `verdict.veto=True` → `_veto_skip_hitl_and_sandbox=True`, `code_execution_payload` mit `skipped=True`/`hitl_status="vetoed"`/`veto={vetoed, reason, latency_ms}`-Sub-Field; HitL/Sandbox/Snapshot werden uebersprungen|`verdict.veto=False` (PASS) → `veto_status_for_audit="pass"`, weiter zum HitL-Gate|`verdict.error` → `veto_status_for_audit="error"`, weiter zum HitL-Gate (fail-open)|`should_run_veto=False` → `veto_status_for_audit="skipped"`, weiter zum HitL-Gate
-- **Audit-Trail wird nur geschrieben wenn der Veto-Pfad aktiv war**|bei `code_veto_enabled=False` bleibt `code_vetoes`-Tabelle leer|bei VETO schreibt der Endpunkt **keine** Zeile in `code_executions` (P206-Tabelle), weil HitL nicht lief — Audit landet ausschliesslich in `code_vetoes`|Korrelation zwischen den beiden Tabellen ueber `session_id`/`project_id`
-- Nala-Frontend [`nala.py`](zerberus/app/routers/nala.py)|CSS `.veto-card` mit roter Border (`rgba(229,115,115,0.55)`)|`.veto-card-header` (rotes Icon + 🛑 Header + Sprach-Tag)|`.veto-reason` prominent (`white-space: pre-wrap`)|`.veto-meta` italic Latency|`.veto-code-toggle` mit `min-height: 44px` (Mobile-first, **read-only** — kein Approve-Button)|`.veto-code-block` collapsible mit `overflow-x: auto`/`max-height: 280px`|`.veto-card.veto-collapsed` Default-State faltet Code ein|kein Post-Klick-State weil read-only Audit-Spur
-- JS-Funktion `renderVetoCard(wrapperEl, codeExec, triptych)` analog `renderDiffCard` aus P207|User-/LLM-Strings via `textContent` (XSS-safe by default)|Code-Block via `<code>${escapeHtml(codeStr)}</code>` mit `<pre>`-Wrapping|Insertion vor dem Triptychon, identische Visual-Order (bubble → veto-card → triptych → export-row, OHNE Code-Card und Output-Card weil Veto-Pfad)|kein `addEventListener` fuer Approve/Reject, nur fuer Code-Toggle
-- `renderCodeExecution`-Erweiterung|ganz frueh: `if (vetoInfo && vetoInfo.vetoed === true) { renderVetoCard(...); return; }` (early-exit)|bei `vetoed=false` oder fehlendem Veto-Field laeuft der bestehende Code-Card/Output-Card/Diff-Card-Pfad unveraendert weiter — Backwards-Compat zu P203d-3/P206/P207
-- Feature-Flags in [`config.py::ProjectsConfig`](zerberus/core/config.py)|`code_veto_enabled: bool = True` Master-Switch (off → kein Probe, kein Audit, kein Block in der Response)|`code_veto_temperature: float = 0.1` (deterministisch fuer wiederholbare Verdicts — Veto soll nicht zufaellig zwischen PASS und VETO schwanken)
-- Was P209 NICHT macht: Mehr-Modell-Voting (genau ein Veto-Call pro Run)|Lern-Loop ueber `code_vetoes`-History (manuelle Auswertung via SQL)|Kosten-Aggregation des Veto-Calls in `interactions.cost` (Schuld analog P203d-1/P203d-2/P208)|Veto-Override durch User (kein "ich weiss was ich tue"-Button — bei false-positives Frage neu stellen)|Sprach-spezifische Heuristiken (`should_run_veto` akzeptiert `language` als Parameter, nutzt es aber nicht — spaeter `bash` aggressiver triggern als `python`)|Persistenz der Verdicts ueber Server-Restart (transient)|Telegram-Pfad (Huginn hat eigenen P167-HitL ohne Veto)
-- Logging-Tag `[VETO-209]` mit `decision veto=... reason_len=... code_len=... lang=... session=... latency_ms=...`/`blocked session=... language=... reason_len=...`/`audit_written session=... project_id=... verdict=... language=... latency_ms=...`/`Pipeline-Fehler (fail-open): ...`/`llm_call_failed (fail-open): ...`/`llm_returned_unexpected_type type=...`|Worker-Protection-konform: kein Klartext aus Code/Begruendung/User-Prompt im Log, nur Längen-Metriken
-- Tests: 88 in [`test_p209_code_veto.py`](zerberus/tests/test_p209_code_veto.py)|12 Klassen: `TestShouldRunVeto` (13), `TestRiskyTokens` (6), `TestTrivialOneliner` (5), `TestBuildVetoMessages` (7 — incl. no-persona-leak), `TestParseVetoVerdict` (13), `TestVetoVerdict` (2), `TestRunVeto` (8), `TestStoreVetoAudit` (3), `TestLegacySourceAudit` (10 — incl. veto-vor-HitL-Reihenfolge), `TestNalaSourceAudit` (8 — incl. kein-Approve-Button), `TestE2EVeto` (5 — veto-blockt-sandbox/pass-zur-sandbox/trivial-skipt-veto/disabled-skipt-audit/veto-keine-hitl-pending), `TestJsSyntaxIntegrity` (1, skipped wenn node fehlt), `TestSmoke` (4)|Lokal: 2035 baseline → **2123 passed** (+88 P209), 0 NEUE Failures
-- Helper fuer P210/P211: `code_vetoes`-Tabelle mit `audit_id`/`session_id`/`project_id`/`verdict`/`latency_ms` als Audit-Vorlage fuer GPU-Queue-Audits (P210) oder Secrets-Maskierung (P211)|`.veto-card`-CSS-Pattern (rote Border + read-only + collapsible Code-Toggle) klont sich trivial zu `.secret-mask-card` (P211 maskierte Outputs) oder `.gpu-queue-card` (P210 Wartezeit-Anzeige)|`renderVetoCard`-Pattern (frueher `return` in `renderCodeExecution` + textContent-only-Render + kein Approve-Button) ist die Vorlage fuer jede neue **Read-only Audit-Karte** (im Gegensatz zu P206/P207/P208 mit User-Interaktion)|`parse_veto_verdict`-Pattern (First-Line-Match + Multi-Line-Reason + Fail-open-Fallback + Bytes-Truncate) ist universell fuer jeden LLM-Verdict-Parser
-
-## Spec-Contract / Ambiguitäts-Check (P208 — Phase 5a Ziel #8 ABGESCHLOSSEN)
-- Neues Modul [`zerberus/core/spec_check.py`](zerberus/core/spec_check.py) mit Pure-Function-Schicht|`compute_ambiguity_score(message, *, source="text"|"voice") -> float` Heuristik 0.0-1.0 (leerer Input → 1.0, Length-Penalty <4w +0.40 / <8w +0.20 / <14w +0.05, Pronomen-Dichte max +0.30, Code-Verb ohne Sprachangabe +0.20, generisches Verb ohne Substantiv-Anker +0.15, Code-Verb ohne IO-Spec +0.10, Voice-Bonus +0.20)|`should_ask_clarification(score, *, threshold=0.65) -> bool` Trigger-Gate|`build_spec_probe_messages(message)` baut zwei-Element-Liste fuer den Probe-LLM (System-Prompt mit "EINE Frage, max 1 Satz, max 160 Zeichen"-Constraint, User-Prompt mit eingebetteter Original-Anfrage)|`build_clarification_block(question, answer)` + `enrich_user_message(original, question, answer)` haengen `[KLARSTELLUNG]…[/KLARSTELLUNG]`-Block an (Marker substring-disjunkt zu `[PROJEKT-RAG]`/`[PROJEKT-KONTEXT]`/`[PROSODIE]`/`[CODE-EXECUTION]`/`[AKTIVE-PERSONA]`)|`SPEC_PROBE_MAX_BYTES=400` (Probe-Frage), `SPEC_ANSWER_MAX_BYTES=2000` (User-Antwort), `AUDIT_MAX_TEXT_BYTES=4000` (DB-Truncate)
-- Async-Wrapper `run_spec_probe(message, llm_service, session_id) -> Optional[str]`|ruft `llm_service.call` mit `temperature_override=0.3`|fail-open auf jeder Stufe: LLM-Crash, leere/whitespace-Antwort, Non-Tuple-Result → `None`|Bytes-genau truncate auf `SPEC_PROBE_MAX_BYTES` ohne Multi-Byte-Zerlegung
-- Pending-Registry `ChatSpecGate`-Singleton (analog `ChatHitlGate` aus P206)|In-Memory only, kein DB-Persist (Long-Poll-Requests sterben beim Restart sowieso)|`create_pending(session_id, project_id, project_slug, original_message, question, score, source)` legt UUID4-hex an, `wait_for_decision(pending_id, timeout)` blockt via `asyncio.wait_for(event.wait(), timeout=N)`, `resolve(pending_id, decision, *, session_id, answer_text)` flippt Status mit Cross-Session-Defense (`session_id`-Match)|`list_for_session(session_id)` filtert nach Owner, leere session_id → leere Liste (kein Cross-Session-Leak)|`cleanup(pending_id)` raeumt nach Resolve|Decisions: `answered`/`bypassed`/`cancelled` (drei statt zwei wie HitL — `answered` braucht non-empty `answer_text`, sonst False)
-- `ChatSpecPending`-Dataclass|Felder: `id` (UUID4-hex), `session_id`, `project_id`, `project_slug`, `original_message`, `question`, `score` (Float), `source` (text|voice), `status` (pending|answered|bypassed|cancelled|timeout), `answer_text` (nullable, nur bei answered), `created_at`, `resolved_at`|`to_public_dict()` liefert JSON-Repraesentation fuer den Poll-Endpoint, ohne `status`-Feld (implizit pending) und `answer_text` (interne Auswertung im Backend)
-- Neue DB-Tabelle `clarifications` in [`database.py`](zerberus/core/database.py)|Spalten: `id` (PK), `pending_id` (UUID4 INDEX), `session_id`, `project_id`, `project_slug`, `original_message`, `question`, `answer_text`, `score` (Float), `source` (text|voice), `status` (answered|bypassed|cancelled|timeout|error INDEX), `created_at`, `resolved_at`|persistente Spur fuer Threshold-Tuning (wie oft trifft die Heuristik, wie oft hilft die Rueckfrage, wie oft bypasst der User)|`store_clarification_audit(...)` Best-Effort, jeder Fehler wird geloggt + verschluckt
-- Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py) zwischen `last_user_msg`-Cleanup (Cloud/Local-Suffix entfernt) und Intent-Detection|Source-Detection: voice wenn `X-Prosody-Context` + `X-Prosody-Consent: true` Header gesetzt sind (P204-Konvention), sonst text|`compute_ambiguity_score(last_user_msg, source=...)` → bei `should_ask_clarification(score, threshold)` → `run_spec_probe(...)` → bei nicht-leerer Frage Pending erzeugen + `wait_for_decision(timeout)`|drei Decision-Pfade: `answered`+`answer_text` → `enrich_user_message` baut `[KLARSTELLUNG]`-Block, `req.messages` mitgespiegelt → Haupt-LLM-Call sieht Frage+Antwort|`bypassed` → Original durch (User akzeptiert Risiko)|`cancelled` → early-return mit Hinweis-Antwort `model="spec-cancelled"`, **kein** Haupt-LLM-Call|`timeout` → wie `bypassed` (defensiver: User schaut nicht hin → eher durchlassen)
-- Zwei neue auth-freie Endpoints (per `/v1/`-Invariante kein JWT)|`GET /v1/spec/poll` — Long-Poll-Endpoint, liefert das aelteste pending Spec-Pending der Session als JSON oder `{"pending": null}`, Header `X-Session-ID` als Owner-Diskriminator|`POST /v1/spec/resolve` — Body `{pending_id, decision, session_id?, answer_text?}`, idempotent + Cross-Session-Block, Antwort `{ok, decision}`|`answered` braucht non-empty `answer_text`, sonst `ok=False`
-- Nala-Frontend [`nala.py`](zerberus/app/routers/nala.py)|CSS `.spec-card` mit Kintsugi-Gold-Border + collapsible-style Layout (Header → Original-Message → Question → Textarea → Actions)|`.spec-original` (klein, italic, grau), `.spec-question` (gross, prominent, white-space pre-wrap), `.spec-answer-input` textarea (60px-160px, focus-Border in Gold)|`.spec-actions` flex-row mit drei Buttons in 44x44px Touch-Targets: `.spec-answer-btn` (gold) / `.spec-bypass-btn` (gruen) / `.spec-cancel-btn` (rot)|Post-Klick-States `.spec-card.spec-{answered,bypassed,cancelled}` (gruen/gold/rot Border + Resolved-Text)|Karte bleibt sichtbar als Audit-Spur
-- JS-Funktionen|`startSpecPolling(abortSignal, snapshotSessionId)` analog HitL — `setInterval(tick, 1000)` pollt `/v1/spec/poll`, bei Pending → `renderSpecCard(...)` + stopPolling (einer reicht pro Turn)|`renderSpecCard(pending)` baut DOM mit Original-Message + Frage via `textContent` (XSS-safe by default), Textarea fuer Antwort, drei Buttons mit `addEventListener` (kein inline onclick — P203b-Lesson)|`resolveSpecPending(pendingId, decision, answerText)` POSTed `/v1/spec/resolve`, sperrt alle Buttons+Textarea sofort (kein Doppel-Klick), updatet Card-State (gruen/gold/rot)|`clearSpecState()`/`stopSpecPolling()` analog HitL|`sendMessage` ruft `clearSpecState() + startSpecPolling(myAbort.signal, reqSessionId)` parallel zum HitL-Polling — beide laufen unabhaengig (Spec VOR LLM-Call, HitL NACH Code-Block)
-- Feature-Flags in [`config.py::ProjectsConfig`](zerberus/core/config.py)|`spec_check_enabled: bool = True` (Master-Switch off → kein Probe, kein Pending, kein Block)|`spec_check_threshold: float = 0.65` (konservativ — kurze Saetze ohne Sprachangabe triggern, einfaches Smalltalk nicht)|`spec_check_timeout_seconds: int = 60` (Long-Poll-Fenster pro Request)
-- Was P208 NICHT macht: Sprachen-Erkennung im Code-Block (das ist P203d-1, andere Seite der Pipeline)|Refactoring der HitL-Card P206 (Spec ist eine separate Karte VOR HitL)|Multi-Turn-Klarstellung (eine Frage pro Turn, dann zurueck in Hauptpfad)|Telegram-Pfad (Huginn hat eigenen P167-HitL, Spec waere Overkill in async-Threads)|Persistierung der Pendings (In-Memory only, analog P206-Konvention)|Edit-Vor-Run (User kann Original-Prompt nicht editieren, nur antworten oder bypassen)|Token-Cost-Tracking fuer Probe-Call (Schuld analog P203d-1)
-- Logging-Tag `[SPEC-208]` mit `pending_create id=... session=... score=... source=... question_len=...`/`decision id=... session=... status=... answer_len=...`/`ambig score=... threshold=... source=... session=...`/`not_ambig score=... threshold=... source=... session=...`/`probe_returned_empty session=... (fail-open)`/`audit_written session=... project_id=... status=... source=... score=...`/`Pipeline-Fehler (fail-open): ...`|Worker-Protection-konform: kein Klartext aus Score-Heuristik, keine User-Antwort-Inhalte im Log
-- Tests: 89 in [`test_p208_spec_contract.py`](zerberus/tests/test_p208_spec_contract.py)|14 Klassen: `TestComputeAmbiguityScore` (9 — leer/range/length/voice/code-verb/pronoun/clear/clamp/io)|`TestShouldAskClarification` (5 — above/below/exact/invalid/custom)|`TestBuildSpecProbeMessages` (5)|`TestEnrichUserMessage` (6)|`TestMarkerUniqueness` (2)|`TestRunSpecProbe` (7 — happy/strip/empty/whitespace/crash/non-tuple/truncate)|`TestChatSpecGate` (13)|`TestStoreClarificationAudit` (3)|`TestSpecPollResolveEndpoints` (6)|`TestLegacySourceAudit` (13)|`TestNalaSourceAudit` (10)|`TestE2ESpecCheck` (5 — non-ambig skip / bypassed / answered+enrichment / cancelled+early-return / disabled-skip)|`TestJsSyntaxIntegrity` (1, skipped wenn node fehlt)|`TestSmoke` (4)
-- Helper fuer P209/P210/P211: `clarifications`-Tabelle hat `pending_id`/`session_id`/`project_id`/`status`-Korrelationsschluessel als Audit-Vorlage|`.spec-card`-CSS-Pattern (Header → Original → Question → Input → Actions → Resolved-State) klont sich trivial zu `.veto-card` (P209 Zweite Meinung) oder `.gpu-queue-card` (P210)|`renderSpecCard`/`resolveSpecPending`-Pattern (Render mit textContent + Async-Resolve mit Card-State-Update + Audit-Spur-Erhalt) ist die zweite Vorlage neben P207 fuer User-Interaktions-Karten|`compute_ambiguity_score`-Heuristik-Set ist erweiterbar (neue Penalties einbauen, Tests parametrisieren) ohne API-Bruch
-
-## Workspace-Snapshots, Diff-View, Rollback (P207 — Phase 5a Ziele #9 + #10 ABGESCHLOSSEN)
-- Neues Modul [`zerberus/core/projects_snapshots.py`](zerberus/core/projects_snapshots.py) mit drei Schichten|Pure-Function: `build_workspace_manifest(root, *, include_content=True)` → `{rel: {hash, size, binary, content?}}`-Dict, `diff_snapshots(before, after) -> List[DiffEntry]` (added/modified/deleted, sortiert, optional `unified_diff` via `difflib`), `_looks_text` (Null-Byte-Heuristik), `_is_safe_member` (Tar-Member-Validation gegen Path-Traversal/Symlink/Hardlink), `_build_unified_diff`|Sync-FS: `materialize_snapshot(workspace_root, snapshot_root, *, label, snapshot_id=None)` schreibt `ustar`-Tar atomar via Tempname + `os.replace`, `restore_snapshot(workspace_root, archive_path)` raeumt Workspace-Inhalt komplett und extrahiert Tar mit Member-Validation|Async-DB: `store_snapshot_row`/`load_snapshot_row` auf neue Tabelle `workspace_snapshots`|High-Level: `snapshot_workspace_async(project_id, base_dir, *, label, pending_id=None, parent_snapshot_id=None)` zieht Slug aus DB + materialisiert + DB-Insert, `rollback_snapshot_async(snapshot_id, base_dir, *, expected_project_id=None)` mit Project-Owner-Check
-- Neue DB-Tabelle `workspace_snapshots` in [`database.py`](zerberus/core/database.py)|Spalten: `snapshot_id` (UUID4-hex UNIQUE+INDEX), `project_id`, `project_slug`, `label` (`before_run`/`after_run`/`manual`), `archive_path`, `file_count`, `total_bytes`, `pending_id` (Korrelation zu P206 hitl_chat/code_executions), `parent_snapshot_id` (zeigt vom `after`- auf `before`-Snapshot derselben Ausfuehrung), `created_at`|Snapshot-Tars liegen unter `data/projects/<slug>/_snapshots/<snapshot_id>.tar`|Bewusst KEINE Foreign-Keys (Models bleiben dependency-frei)
-- Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py)|`_writable = bool(getattr(settings.projects, "sandbox_writable", False))` (Default False — RO bleibt P203c-Standard), `_snapshots_active = _writable and bool(getattr(settings.projects, "snapshots_enabled", True))`|Bei `_snapshots_active`: `_before_snap = await snapshot_workspace_async(label="before_run", pending_id=hitl_pending_id)`|`execute_in_workspace(..., writable=_writable)` — der hardcoded `writable=False` aus P203d-1 wurde durch den Settings-Lookup ersetzt|Nach erfolgreichem Run: `_after_snap = await snapshot_workspace_async(label="after_run", parent_snapshot_id=_before_snap["id"])`, dann `diff = diff_snapshots(_before_snap["manifest"], _after_snap["manifest"])`|Drei additive Felder ins `code_execution_payload`: `diff` (Liste von `DiffEntry.to_public_dict()`), `before_snapshot_id`, `after_snapshot_id`|Fail-Open auf jeder Stufe — wenn `before_snap` None liefert, kein after-Snapshot, kein Diff (Hauptpfad bleibt gruen)|HitL-Skip (rejected/timeout) → kein Snapshot-Pfad (es gab keinen Run)
-- Neuer Endpoint `POST /v1/workspace/rollback` in `legacy.py` (auth-frei wie `/v1/hitl/*`, Dictate-Lane-Invariante)|`WorkspaceRollbackRequest{snapshot_id, project_id}` → `WorkspaceRollbackResponse{ok, snapshot_id?, project_id?, project_slug?, file_count?, total_bytes?, error?}`|Reject-Pfade: `snapshots_disabled` (Master-Switch off → 200 mit `ok=False`), `restore_failed` (unbekannte snapshot_id ODER project_mismatch — beides liefert None), `pipeline_error` (uncaughter Crash)|Defense-in-Depth: `expected_project_id` muss zum Snapshot-Eigentuemer passen — ein Snapshot aus Projekt A kann nicht ueber Projekt B angewendet werden
-- Nala-Frontend [`nala.py`](zerberus/app/routers/nala.py)|CSS: `.diff-card` mit Kintsugi-Gold-Border + collapsible Inline-Diff `.diff-content` (`overflow-x: auto`, `max-height: 240px`)|`.diff-status.diff-{added,modified,deleted}` semantische Badges|`.diff-rollback` Footer-Button mit `min-height: 44px`/`min-width: 44px` (Mobile-first)|Post-Klick-States `.diff-card.diff-{rolled-back,rollback-failed}`
-- JS-Funktionen|`renderDiffCard(wrapperEl, codeExec, triptych)` baut Header `📋 Workspace-Aenderungen` mit Summary `N neu, M geaendert, K geloescht`, dann pro DiffEntry eine `<li class="diff-entry diff-collapsed">` mit Status-Badge + Pfad (escapeHtml) + Size-Label, Klick toggled `.diff-collapsed`|`colorizeUnifiedDiff(text)` faerbt Plus/Minus/Header (gruen/rot/grau) — nutzt `String.fromCharCode(10)` statt `'\n'`-Literal (Lesson aus P203b: Newline-Escapes werden in Python-Source frueh interpretiert)|`rollbackWorkspace(cardEl, snapshotId, projectId)` macht POST `/v1/workspace/rollback` mit `{snapshot_id, project_id}` und setzt Card-State
-- `renderCodeExecution`-Erweiterung|Nach Code-Card + Output-Card-Insert: `if (!skipped && Array.isArray(codeExec.diff) && codeExec.before_snapshot_id) renderDiffCard(...)`|Backwards-compat zu P206-only-Backends (kein `before_snapshot_id` → kein Diff-Render)|Bei HitL-Skip (`skipped=true`) wird der Diff-Pfad explizit uebersprungen — es gab gar keinen Run
-- Feature-Flags in [`config.py::ProjectsConfig`](zerberus/core/config.py)|`sandbox_writable: bool = False` (RO-Default bleibt P203c-Konvention) + `snapshots_enabled: bool = True` (Master-Switch fuer den Snapshot-Pfad)|Beide Flags getrennt: writable + Snapshots fuer Power-Hands, writable + kein Snapshot fuer Headless-Production
-- Tar-Sicherheits-Spec|`_is_safe_member` ist portabel (Python 3.10/3.11 unterstuetzt — `data_filter` aus 3.12 nicht nutzen)|prueft pro Member: kein dev/symlink/hardlink, kein absoluter Pfad, kein `..` in Path-Parts, resolved-Path muss innerhalb des dest_root liegen|Boese Members einzeln skippen + loggen statt ganzen Restore failen — der legitime Rest soll trotzdem extrahiert werden
-- Was P207 NICHT macht: Cross-Project-Diff (per-Projekt isoliert)|Branch-Mechanik (linear forward/reverse only)|automatischer Rollback bei `exit_code != 0` (User-Choice, manche Crashes hinterlassen wertvolle Teil-Outputs)|Per-File-Rollback (alles oder nichts pro Snapshot)|Hardlink-Snapshots (Tar ist Tests-tauglich, atomar)|Storage-GC fuer alte Snapshots (eigener Patch, HANDOVER-Schuld)|Sync-After-Write zurueck in den SHA-Storage (geaenderte Files leben nur im Workspace, Schuld bleibt offen)
-- Logging-Tag `[SNAPSHOT-207]` mit `materialized id=... label=... file_count=... total_bytes=...`/`db_row_written ...`/`diff project_id=... before=... after=... changes=...`/`restored archive=... file_count=...`/`rollback_done snapshot_id=... project_id=...`/`rollback_endpoint snapshot_id=... project_id=...`/`restore: unsafe member skipped: ...`/Defense-Logs fuer Fail-Open-Pfade
-- Tests: 74 in [`test_p207_workspace_snapshots.py`](zerberus/tests/test_p207_workspace_snapshots.py)|Pure-Function (29 — Manifest, Diff, Looks-Text, Is-Safe-Member, Unified-Diff, Snapshot-Dir-For)|Sync-FS (7 — Materialize, Restore mit Path-Traversal-Defense)|DB (8 — Store/Load + Convenience + Project-Mismatch)|Endpoint (4 — OK/restore_failed/project_mismatch/snapshots_disabled)|Source-Audit legacy.py + nala.py (19)|End-to-End (4 — Mock-Sandbox die den Workspace mutiert)|JS-Integrity (1, skipped wenn node fehlt)|Smoke (4)|Plus 1 nachgezogener P203d-1-Test (`writable=False` ist nicht mehr hardcoded)
-- Helper fuer P208/P209: `pending_id`/`parent_snapshot_id`-Korrelationsschluessel in `workspace_snapshots` sind universell genug fuer kuenftige Audit-Spuren|`.diff-card`-CSS klont sich trivial zu `.spec-card`/`.veto-card`|`renderDiffCard`/`rollbackWorkspace`-Pattern (Render + Async-Resolve mit Card-State-Update) ist die Vorlage fuer jede weitere User-Interaktions-Karte|`String.fromCharCode(10)`-Trick fuer Newline-Splits in JS aus Python-Source|`_is_safe_member`-Tar-Defense ist universell fuer jeden Restore-/Extract-Pfad
-
-## HitL-Gate vor Code-Execution (P206 — Phase 5a Ziel #6 ABGESCHLOSSEN)
-- Neues Modul [`zerberus/core/hitl_chat.py`](zerberus/core/hitl_chat.py) mit `ChatHitlGate`-Singleton (In-Memory-only, kein DB-Persist)|`create_pending(session_id, project_id, project_slug, code, language)`/`wait_for_decision(pending_id, timeout)`/`resolve(pending_id, decision, *, session_id)`/`list_for_session(session_id)`/`cleanup(pending_id)`|UUID4-hex (32 chars) als pending_id, `asyncio.Event` als Notification-Shortcut
-- Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py) zwischen `first_executable_block` und `execute_in_workspace`|bei `settings.projects.hitl_enabled=True` (Default) → Pending erzeugen, `wait_for_decision` blockt long-poll-style|Decisions: `approved`/`bypassed` → Sandbox laeuft normal, `rejected`/`timeout` → Skip-Payload mit `skipped=True`/`hitl_status` in `code_execution`-Response|Synthese (P203d-2) skippt skipped-Payloads (`and not payload.get("skipped")`)
-- Zwei neue auth-freie Endpoints (per `/v1/`-Invariante kein JWT)|`GET /v1/hitl/poll` — Frontend-Poll-Endpoint, liefert das aelteste Pending der Session als JSON oder `{"pending": null}`, Header `X-Session-ID` als Owner-Diskriminator|`POST /v1/hitl/resolve` — Body `{pending_id, decision, session_id}`, idempotent + Cross-Session-Block, Antwort `{ok, decision}`
-- **Cross-Session-Defense** per Owner-ID-Match neben der UUID|UUID4-hex ist kombinatorisch unrate-bar, aber wenn IDs leaken (Logs, Tab-Sharing), darf ein anderer Tab das Pending nicht resolven|`resolve(pending_id, decision, *, session_id=None)` checkt `session_id == pending.session_id`
-- **In-Memory-only ist die richtige Persistenz fuer transient User-Confirmations**|Long-Poll-Requests sterben beim Server-Restart sowieso, persistente Pendings wuerden zu "Geister-Karten" fuehren|fuer transient-Lifecycles: kein DB-Insert, kein Sweep-Loop, keine Migration — nur ein dict + asyncio.Event|Telegram-HitL (P167) ist anders: Callbacks kommen Stunden spaeter, dort BRAUCHT es DB-Persistenz
-- Audit-Tabelle `code_executions` in [`database.py`](zerberus/core/database.py) — schliesst HANDOVER-Schuld P203d-1|Spalten: `pending_id`/`session_id`/`project_id`/`project_slug`/`language`/`exit_code`/`execution_time_ms`/`truncated`/`skipped`/`hitl_status`/`code_text`/`stdout_text`/`stderr_text`/`error_text`/`created_at`/`resolved_at`|8 KB Truncate via `_truncate_for_audit` fuer Code+Outputs|Best-Effort-Insert (try/except) — Hauptpfad bleibt gruen
-- Nala-Frontend [`nala.py`](zerberus/app/routers/nala.py)|CSS `.hitl-card` mit Kintsugi-Gold-Border + 44x44px-Touch-Buttons in `.hitl-actions`|JS `startHitlPolling`/`stopHitlPolling`/`renderHitlCard`/`resolveHitlPending`/`clearHitlState`|`sendMessage` startet Polling parallel zum Chat-Fetch, `finally` stoppt|Card bleibt nach Klick als Audit-Spur im DOM (Approved gruen "Code laeuft...", Rejected rot "Abgebrochen")
-- `renderCodeExecution` erweitert um `skipped`-State|Skip-Badge `⏸ uebersprungen` (rejected) oder `⏱ timeout` ersetzt regulaeres exit-Code-Badge|Reason kommt aus dem `error`-Feld im Banner — kein doppelter Render
-- XSS-Schutz im Renderer|`escapeHtml(String(pending.code))` fuer Code-Vorschau|Source-Audit-Test verifiziert: jedes `pending.code`-Vorkommen MUSS durch `escapeHtml(` gehen
-- Feature-Flag `projects.hitl_enabled: bool = True` plus `hitl_timeout_seconds: int = 60` in `ProjectsConfig`|bei `false` laeuft P203d-1-Verhalten ohne Gate (audit-status `bypassed`)
-- Logging-Tag `[HITL-206]` mit `pending_create`/`decision`/`bypassed`/`skipped`/`audit_written`/`audit_failed`|Worker-Protection-konform: keine Code-Inhalte oder Output-Inhalte im Log
-- Was P206 NICHT macht: Persistenz ueber Restart (transient mit Absicht), Edit-Vor-Run (Code ist read-only), Telegram-Pfad (Huginn hat eigenen P167-HitL), HitL fuer Output-Synthese (zweites Gate waere Overkill)
-- Tests: 55 in [`test_p206_hitl_chat_gate.py`](zerberus/tests/test_p206_hitl_chat_gate.py)|`TestChatHitlGate` (13 — Pure-async)|`TestStoreCodeExecutionAudit` (3 — DB-Insert + Truncate + silent-skip)|`TestHitlEndpoints` (7 — Poll/Resolve direkt aufgerufen)|`TestLegacySourceAudit` (8 — Verdrahtungs-Audit, Synthese-Skip, Endpoints registriert)|`TestNalaSourceAudit` (12 — JS, CSS, 44x44px, XSS, sendMessage-Wiring)|`TestE2EHitlGateInChat` (6 — Mock-LLM + monkeypatched wait_for_decision)|`TestJsSyntaxIntegrity` (1, skipped wenn node fehlt)|`TestSmoke` (3)
-- HANDOVER-Teststand-Konvention: HANDOVER-Header bekommt die Zeile `**Manuelle Tests:** X / Y ✅`, gezaehlt aus der Manuelle-Tests-Tabelle in WORKFLOW.md|Spec in der Doku-Pflicht-Sektion|kein Reminder-Text, kein Eskalation, nur die Zahl
-- Helper fuer P207: `code_executions`-Tabelle hat schon `pending_id`/`session_id`/`project_id` als Korrelationsschluessel|`.hitl-card`-CSS klont sich trivial zu `.diff-card`/`.rollback-card`|Long-Poll-innerhalb-Request + Resolve-Endpoint-Pattern ist die Vorlage fuer jede weitere User-Bestaetigung in der Pipeline (Diff-Approval, Spec-Confirmation)
-
-## UI-Render im Nala-Frontend fuer Sandbox-Code-Execution (P203d-3 — Phase 5a Ziel #5 ABGESCHLOSSEN)
-- Frontend-only-Patch in [`zerberus/app/routers/nala.py`](zerberus/app/routers/nala.py)|kein neues Modul, kein Backend-Touch|drei Bausteine: CSS-Klassen + `escapeHtml`-Helper + `renderCodeExecution`-Renderer
-- Renderer-Signatur: `renderCodeExecution(wrapperEl, codeExec)`|liest `codeExec.{language, code, exit_code, stdout, stderr, execution_time_ms, truncated, error}` (P203d-1-Schema)|baut zwei Karten unter dem Bot-Bubble: Code-Card (Sprach-Tag + exit-Badge gruen/rot + escapter Code in `<pre><code>` + optional Laufzeit-Meta + optional Error-Banner) plus Output-Card (collapsible stdout/stderr mit 44×44px Toggle, optional Truncated-Marker)
-- **`addMessage` retourniert wrapper.** Die Funktion gibt jetzt das DOM-Wrapper-Element zurueck, damit der Caller (sendMessage) den Renderer nachtraeglich einhaengen kann|Backwards-Compat: alle bisherigen Caller (Voice-Input, History-Replay, Late-Fallback) ignorieren den Return-Value, ihr Verhalten bleibt identisch
-- Verdrahtung in `sendMessage` direkt nach `const botWrapper = addMessage(reply, 'bot');`: `if (data.code_execution) { try { renderCodeExecution(botWrapper, data.code_execution); } catch (_e) {} }`|Fail-quiet: Renderer-Crash darf den Chat-Loop nicht unterbrechen
-- **`escapeHtml(s)`**-Helper neben `escapeProjectText` (P201)|delegiert an `escapeProjectText` (gleiche 4-Zeichen-Map)|eigener Name fuer den XSS-Audit-Test (Min-Count 4 `escapeHtml(`-Aufrufe im Renderer-Body — lang+code+stdout+stderr)
-- CSS-Theme: Kintsugi-Gold (P124) wiederverwendet|`.code-toggle` mit `min-height: 44px` UND `min-width: 44px` (Mobile-first Touch-Target)|`.code-content` mit `overflow-x: auto` und `max-height: 380px` (kein horizontal-Bruch auf 390x844-Viewport)|`.output-card.collapsed`-State faltet die Output-Card by default ein|`.exit-badge.exit-ok` (gruen `#6cd4a1`) / `.exit-badge.exit-fail` (rot `#e57373`) + `.output-content.output-stderr` (rot) als semantischer Status
-- Insertion-Punkt: vor dem `.sentiment-triptych`-Element (`wrapperEl.insertBefore(codeCard, triptych)`)|Visual-Order: bubble → toolbar → code-card → output-card → triptych → export-row
-- Backwards-Compat zu Backends ohne `code_execution`-Feld: Renderer skippt bei `null/undefined`-Input (Frontend rendert nur Bot-Bubble normal)|Skippt auch bei leerem `code` (kein Render einer leeren Karte)
-- Was P203d-3 NICHT macht (bewusste Leerstelle): keine Syntax-Highlighting-Library (Plain-Text `<pre><code>` — leichtgewichtig)|kein Edit-Knopf am Code (read-only)|keine Re-Run-Funktion|keine SSE-Stream-Frames|kein Telegram-Pfad (Huginn bleibt auf `format_sandbox_result` aus P171)|kein Copy-to-Clipboard-Button am Code-Card (User kopiert via Browser-Long-Press oder ueber den Toolbar-`📋`-Button)
-- Lesson aus P203b: `node --check` ueber alle inline `<script>`-Bloecke aus `NALA_HTML` (analog zu Hel-Test)|skipped wenn `node` nicht im PATH|faengt SyntaxError-Regression frueh ab, bevor er live wieder auftaucht
-- Tests: 30 in [`test_p203d3_nala_code_render.py`](zerberus/tests/test_p203d3_nala_code_render.py)|`TestRendererExists` (2)|`TestRendererLiestSchemaFelder` (8 — alle Schema-Felder)|`TestRendererFallbacks` (2 — Null + leerer Code)|`TestRendererInsertionPoint` (1)|`TestSendMessageVerdrahtung` (5 — Wrapper-Return, Caller-Bind, Renderer-Aufruf, Reihenfolge, try/catch)|`TestXssEscape` (4 — Helper-Existenz, Min-Count 4, keine innerHTML ohne escape)|`TestCss` (5 — Card-Klassen, 44×44px Toggle, overflow-x auto, collapsed-State, Farbcodes)|`TestJsSyntaxIntegrity` (1, skipped wenn `node` fehlt)|`TestNalaEndpointSmoke` (1)
-- Helper fuer P206/P207: `addMessage` retournt Wrapper (P206 HitL-Confirm-Card kann sich nachtraeglich einhaengen)|`escapeHtml`-Helper im Frontend (XSS-Schutz fuer alle neuen Karten)|`.code-card`/`.output-card`-CSS-Pattern als Vorlage fuer neue Karten (Diff-Card, HitL-Card)
-
-## Code-Detection + Sandbox-Roundtrip im Chat (P203d-1 — Phase 5a #5 Backend-Pfad)
-- Verdrahtet [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py) mit der Sandbox-Pipeline aus P171/P203a/P203c|nach dem LLM-Call wird die Antwort durch `first_executable_block(answer, allowed_languages)` (Pure-Function aus P171) geprüft, bei aktivem-nicht-archiviertem Projekt UND aktivierter Sandbox UND vorhandenem Code-Block läuft `execute_in_workspace(project_id, code, language, base_dir, writable=False)`|Result kommt als additives `code_execution`-Feld in der `ChatCompletionResponse`
-- Schema-Erweiterung: `ChatCompletionResponse.code_execution: dict | None = None` (Pydantic-Field)|bei populated: `{language, code, exit_code, stdout, stderr, execution_time_ms, truncated, error}` — Mapping aus `SandboxResult`|OpenAI-SDK-Clients (Dictate, SillyTavern, generic) ignorieren das unbekannte Feld → kein Schema-Bruch
-- **Sechs-Stufen-Gate** (alles fail-open ausser ein Gate verbietet's): (1) `active_project_id` aus `X-Active-Project-Id`-Header (P201) — sonst Datei-Fallback wie P171|(2) `project_slug` aus `resolve_project_overlay` vorhanden|(3) **`project_overlay is not None`** — bei archivierten Projekten liefert der Resolver `(None, slug)`, aktive ohne Overlay haben `({}, slug)` — wir blocken Code-Execution auf Eis-gelegten Projekten konservativ (sicherheits-Diskriminator zwischen `None`-archived und `{}`-empty-overlay)|(4) `sandbox.config.enabled`|(5) `first_executable_block` liefert Block (KEIN `fallback_language` — sonst würde Plain-Text als unknown-Code interpretiert)|(6) `execute_in_workspace` liefert `SandboxResult` (P203c-Wrapper) statt `None`
-- Hardcoded `writable=False` — schreibender Mount erst nach explizitem Sync-After-Write-Pfad (P207, Phase-5a Ziel #9+#10)
-- **Fail-Open** auf jeden Pfad-Fehler in der Sandbox-Pipeline: try/except um den ganzen Block, `logger.warning` ohne re-raise|`code_execution` bleibt `None`, `choices`/`model`/`finish_reason` sind weiter normal — Chat darf nicht durch Sandbox-Probleme blockiert werden
-- Position im Endpunkt: NACH `store_interaction(user, assistant)` und VOR Sentiment-Triptychon-Block — die DB-Zeile für die LLM-Antwort steht bereits, bevor die Sandbox läuft|wenn die Sandbox abstürzt, ist der Chat-Verlauf trotzdem persistent
-- Logging-Tag `[SANDBOX-203d]` — pro Call eine Zeile mit `project_id`/`slug`/`language`/`exit_code`/`stdout_len`/`stderr_len`/`time_ms`/`truncated`|Worker-Protection-konform: keine Code-Inhalte oder Output-Inhalte im Log
-- Was P203d-1 NICHT macht (kommt in P203d-2/P203d-3): zweiter LLM-Call zur Output-Synthese (P203d-2 — Pattern-Vorlage `format_sandbox_result` aus P171/Telegram, nur als LLM-Eingabe statt direkter Telegram-Output), UI-Render im Nala-Frontend (P203d-3 — Code-Block + stdout/stderr-Block + ggf. neuer SSE-Event), HitL-Gate (P206), writable-Mount (P207)
-- Tests: 19 in [`test_p203d_chat_sandbox.py`](zerberus/tests/test_p203d_chat_sandbox.py)|`TestP203d1SourceAudit` (7: Logging-Tag, Imports, Schema-Feld via `model_fields`, `writable=False`-im-Aufruf-Fenster, Field-Pass-Through im Konstruktor)|`TestE2ECodeExecution` (12 via asyncio.run+chat_completions mit Mock-LLM/Mock-Sandbox-Manager/gepatchtem `execute_in_workspace`): Happy-Paths Python+JS, exit_code != 0 mit stderr durchgereicht, multiple Blöcke → erster gewinnt; Skip-Cases (no project, no fence, disabled sandbox, archived, unknown language `rust`, execute returns None); Backwards-Compat (OpenAI-Schema-Felder unangetastet); Fail-Open (`RuntimeError` in Pipeline → `code_execution=None` ohne Crash)
-- Helper für P203d-2: `code_execution_payload`-Dict-Schema steht — P203d-2 kann das Dict im Synthese-Prompt verkaufen, statt das `SandboxResult` neu zu fetchen|wenn ein eigener Logging-Tag `[SYNTH-203d-2]` für den Synthese-Call entsteht, ist die Operations-Sicht klar getrennt
-
-## Prosodie-Kontext im LLM (P204 — Phase 5a #17, unabhängig)
-- Modul: [`zerberus/modules/prosody/injector.py`](zerberus/modules/prosody/injector.py) — Pure-Function-Schicht (`build_prosody_block(prosody, *, bert_label, bert_score)`, Helper `_consensus_label` mit Mehrabian-Logik aus P192/sentiment_display repliziert, `_bert_qualitative` für qualitative-Adjektiv-Übersetzung, Lookup-Tables `_BERT_LABEL_DE`/`_PROSODY_MOOD_DE`/`_PROSODY_TEMPO_DE`) + Wrapper `inject_prosody_context(system_prompt, prosody_result, *, bert_label, bert_score)`
-- Block-Format mit eigenem Marker analog `[PROJEKT-RAG]` (P199): `[PROSODIE — Stimmungs-Kontext aus Voice-Input]` / `[/PROSODIE]`|fünf Zeilen dazwischen: `Stimme:`, `Tempo:`, optional `Sentiment-Text: ... (BERT)` (nur wenn BERT-Label übergeben), `Sentiment-Stimme: ... (Gemma)`, `Konsens: ...`
-- **Worker-Protection (P191): keine Zahlen im Block.** Confidence/Score/Valence/Arousal werden im Konsens-Label verkocht|qualitative Labels nur (`leicht positiv`, `deutlich negativ`, `ruhig`, `muede`, `inkongruent — Text positiv, Stimme negativ`)|`TestWorkerProtectionNoNumbers` parametrisiert: Regex-Check auf `\d+\.\d+`, `%`, `\b\d+\b` schlägt sofort an wenn versehentlich eine Zahl reinrutscht
-- Mehrabian-Konsens-Logik (Pure, kein I/O): BERT positiv (`label=positive` UND `score>0.5`) + Prosody-Valenz negativ (`valence<-0.2`) → `"inkongruent — ..."` (Ironie-/Stress-Hinweis)|sonst Confidence > 0.5 → Stimme dominiert (Stimm-Mood gewinnt)|sonst BERT-Fallback (`deutlich/leicht positiv/negativ` oder `neutral`)|Schwellen identisch zu `utils/sentiment_display.py` (UI-Konsens und LLM-Konsens dürfen nicht voneinander abweichen)
-- Gating (Fail-open in einer Pure-Function): `prosody=None` oder Stub-Source → leerer String|`confidence<0.3` → leerer String|kein BERT mitgegeben → Block ohne Sentiment-Text-Zeile (Stimm-only-Pfad)|Idempotenz: `PROSODY_BLOCK_MARKER` schon im Prompt → kein zweiter Block
-- Verdrahtung in [`legacy.py::chat_completions`](zerberus/app/routers/legacy.py): JSON-Parse von `X-Prosody-Context`-Header mit Type-Guard (nur `dict` akzeptiert) + Consent-Check (`X-Prosody-Consent: true`) + BERT-Call auf `last_user_msg` in try/except (fail-open: BERT-Fehler → kein Sentiment-Text-Zeile, Block läuft ohne) + `inject_prosody_context(...)` mit Keyword-Args
-- Voice-only-Garantie zwei-stufig: (1) Frontend setzt `X-Prosody-Context`-Header nur nach Whisper-Roundtrip (kein Header bei getipptem Text → kein Block)|(2) Stub-Source-Check filtert versehentliche Pseudo-Contexts (defense-in-depth, falls Frontend-Bug einen alten Voice-Context bei einem getippten Turn mitsendet)
-- BERT-Re-Use: server-seitige `analyze_sentiment(last_user_msg)` aus `zerberus.modules.sentiment.router` — KEIN neuer Header (`X-Sentiment-Context` o.ä.)|wenn Whisper-Endpoint schon BERT berechnet hat (P193), wäre ein Header-Reuse einen Roundtrip wert, ist aber aktuell nicht nötig: BERT auf `last_user_msg` ist O(ms) im selben Prozess
-- Logging-Tag: `[PROSODY-204]` wenn BERT mitgegeben (`block_added bert_label=... mood=...`)|`[PROSODY-190]` bleibt für den Stimm-only-Pfad (`block_added mood=... (no bert)`)|Beide nur INFO-Level mit qualitativen Labels — keine Inhalte oder Confidence-Werte ins Log (P191)
-- Tests: 33 in [`test_p204_prosody_context.py`](zerberus/tests/test_p204_prosody_context.py) — `TestBuildProsodyBlock` (9), `TestWorkerProtectionNoNumbers` (3 parametrisiert), `TestConsensusLabel` (6), `TestBertQualitative` (6), `TestInjectWithBert` (5), `TestP204LegacyVerdrahtung` (6 Source-Audit), `TestMarkerUniqueness` (3 distinct vom PROJEKT-RAG/PROJEKT-KONTEXT)|Plus 6 nachgeschärfte Tests in `test_prosody_pipeline.py::TestInjectProsodyContext` (Format-Assertions auf neue Marker, neuer Idempotenz-Test)
-
-## Project-Workspace-Layout (P203a — Phase 5a #5 Vorbereitung)
-- Modul: [`projects_workspace.py`](zerberus/core/projects_workspace.py) — Pure-Function-Schicht (`workspace_root_for(slug, base_dir)` → `<base>/projects/<slug>/_workspace/`, `is_inside_workspace(target, root)` resolved+`relative_to` für Pfad-Sicherheit), Sync-FS-Schicht (`materialize_file` mit Hardlink-primary + Copy-Fallback bei `OSError` + Idempotenz via Inode/Size-Check; `remove_file` räumt leere Eltern bis Workspace-Root weg; `wipe_workspace` mit Sicherheits-Reject auf Pfade die nicht auf `_workspace` enden), async DB-Schicht (`materialize_file_async`, `remove_file_async`, `sync_workspace` mit Materialize+Orphan-Removal)
-- Strategie pro Datei: erst `os.link` (Hardlink — gleiche Inode wie SHA-Storage, kein Plattenplatz, instantan), bei `OSError` (cross-FS, FAT32, NTFS-without-dev-mode, Permission-Denied) → `shutil.copy2`|Methode kommt im Return zurück (`"hardlink"` / `"copy"` / `None`-bei-noop) und im Log — auf Windows-Maschinen ohne dev-mode wird damit auch der Copy-Pfad live mitgetestet (Monkeypatch-Test simuliert `os.link`-Failure)
-- Atomic via tempfile-im-Ziel-Ordner + `os.replace` — analog `_store_uploaded_bytes` (P196), aber dupliziert (statt Import aus hel.py), weil das Workspace-Modul auch ohne FastAPI-Stack importierbar bleiben muss (Tests, künftige CLI)|verhindert dass parallele Sandbox-Reads (P203b) je ein halb-geschriebenes Workspace-File sehen
-- Pfad-Sicherheit zwei-stufig: `is_inside_workspace` resolved beide Pfade und prüft `relative_to` (schützt gegen `../../etc/passwd`-Angriffe via entartete `relative_path`-Werte aus alten Datenbanken oder Migrations) PLUS `wipe_workspace` lehnt jeden Pfad ab, der nicht auf `_workspace` endet (verhindert versehentliches `wipe_workspace(Path("/"))` bei Slug-Manipulation)
-- Idempotenz im `materialize_file`: existierendes Target hat dieselbe Inode wie der Source (Hardlink-Fall) → no-op|Copy-Fall: Size-Match reicht (SHA-Adressierung garantiert Inhalts-Konsistenz auf Storage-Ebene)|Returnt `None` ohne Schreiboperation
-- Verdrahtung als Best-Effort-Side-Effect in vier Trigger-Punkten — alle mit Lazy-Import + try/except, Hauptpfad bleibt grün auch wenn Hardlink/Copy scheitert (Source-of-Truth ist der SHA-Storage + DB):
-  - [`hel.py::upload_project_file_endpoint`](zerberus/app/routers/hel.py) nach `register_file` + nach RAG-Index → `materialize_file_async`
-  - [`hel.py::delete_project_file_endpoint`](zerberus/app/routers/hel.py) nach `delete_file` → `remove_file_async` (mit Slug aus extra `get_project`-Call VOR dem DB-Delete, weil `file_meta` keinen Slug enthält)
-  - [`hel.py::delete_project_endpoint`](zerberus/app/routers/hel.py) nach `delete_project` → `wipe_workspace(workspace_root_for(slug, base))` (nutzt das bereits vorhandene `project_pre`-Memorize aus dem RAG-Pfad)
-  - [`projects_template.py::materialize_template`](zerberus/core/projects_template.py) nach jedem `register_file` → `materialize_file_async` (analog RAG-Verdrahtung in derselben Schleife)
-- `sync_workspace` als Komplett-Resync: materialisiert alle DB-Files, entfernt Orphans (Files im Workspace, die nicht mehr in der DB sind)|idempotent, zweiter Aufruf liefert `{materialized:0, removed:0, skipped:N}`|nicht in den Endpoints verdrahtet (Single-File-Trigger reichen), aber als Recovery-API für künftige CLI/Reindex-Endpoint vorhanden — Pre-P203a-Files können damit in den Workspace nachgezogen werden
-- Feature-Flag [`config.py::ProjectsConfig.workspace_enabled`](zerberus/core/config.py) Default `True`|Tests können abschalten (siehe `TestWorkspaceDisabled`-Klasse — nützlich falls CI auf einer FS-Sandbox läuft, die weder Hardlinks noch Copy zulässt)
-- Logging-Tag `[WORKSPACE-203]` — `materialized path=... via=hardlink|copy target=...`, `wiped workspace_root=...`, `sync_workspace project_id=... slug=... materialized=N removed=N skipped=N`
-- Tests: 36 in [`test_projects_workspace.py`](zerberus/tests/test_projects_workspace.py) — `TestPureFunctions` (4: layout, no-io, traversal-rejected, root-itself), `TestMaterializeFile` (6: create, nested-dirs, idempotent-second-call, traversal-rejected, missing-source, copy-fallback via monkeypatched `os.link`), `TestRemoveFile` (5: removes, cleans-empty-parents, keeps-non-empty-parent, missing-returns-false, traversal-rejected), `TestWipeWorkspace` (3: removes-existing, idempotent-when-missing, rejects-wrong-dirname), `TestSyncWorkspace` (4: unknown-project-zeros, materializes-all, idempotent-second-call, removes-orphans), `TestAsyncWrappers` (3: materialize_file_async, unknown-file-returns-none, remove_file_async), `TestEndpointIntegration` (4: upload, delete-file, delete-project, template-materialize), `TestWorkspaceDisabled` (1: upload skips when disabled), `TestSourceAudit` (5: hel-upload calls workspace, hel-delete-file calls remove, hel-delete-project calls wipe, template calls workspace, workspace-module uses WORKSPACE_DIRNAME ≥2x)
-- Was P203a bewusst NICHT macht (kommt mit P203b/c): Sandbox-Mount auf den Workspace-Ordner — `SandboxManager` (P171) verbietet Volume-Mount aktuell explizit ("Kein Volume-Mount vom Host"), P203b muss `workspace_mount: Optional[Path]` einführen|LLM-Tool-Use für Code-Generation (P203c)|Frontend-Render von Code+Output-Blöcken (P203c)
-
-## Nala-Projekt-Picker (P201 — Phase 5a #4 abgeschlossen)
-- Endpoint: [`nala.py::nala_projects_list`](zerberus/app/routers/nala.py) — `GET /nala/projects`, JWT-pflichtig via `request.state.profile_name`|liefert `{projects: [{id, slug, name, description, updated_at}], count}`|`persona_overlay` ist BEWUSST NICHT im Response (Admin-Geheimnis, kann Prompt-Engineering-Spuren enthalten)|archivierte Projekte ausgeblendet (kein Param zum Sehen)
-- Eigener Endpoint statt Wiederverwendung von `/hel/admin/projects`: (a) Hel ist Basic-Auth-gated, Nala ist JWT — zwei Auth-Welten, kein Bridge|(b) Slimmed Response schützt Overlay|(c) Archived-Default unterscheidet sich
-- UI: vierter Settings-Tab "📁 Projekte" zwischen "Ausdruck" und "System"|Tab-Mechanik wie P142 (B-015), kein neues Modal|Panel mit Aktiv-Anzeige + Aktualisieren + Auswahl-loeschen + Listen-Container `id="nala-projects-list"`
-- Active-Project-Chip im Chat-Header neben Profile-Badge|`<span id="active-project-chip" class="active-project-chip">`|sichtbar nur wenn Projekt aktiv|klick öffnet Settings + springt direkt auf Projects-Tab (`onclick="openSettingsModal(); switchSettingsTab('projects');"`)|gold-border Pill, hover-Glow, max-width + ellipsis für lange Slugs|min-height 22px für Touch-Target
-- State-Persistence: `localStorage['nala_active_project_id']` (numerisch, für Header-Injektion) + `localStorage['nala_active_project_meta']` (JSON `{id, slug, name}`, für Chip-Renderer ohne Re-Fetch)|beim Logout (handle401) wird BEWUSST NICHT geräumt — gleicher User auf gleichem Browser will Auswahl behalten
-- Header-Injektion ZENTRAL in [`profileHeaders(extra)`](zerberus/app/routers/nala.py)|drei zusätzliche Zeilen setzen `X-Active-Project-Id`-Header wenn `getActiveProjectId() !== null`|wirkt damit auf ALLE Nala-Calls (Chat, Voice, Whisper, Profile-Endpoints) — keine Möglichkeit, dass ein neuer Endpoint den Header "vergisst"
-- JS-Funktionen (alle in NALA_HTML): `getActiveProjectId`, `getActiveProjectMeta`, `setActiveProject(p)`, `clearActiveProject`, `selectActiveProjectById(id)`, `renderActiveProjectChip`, `renderNalaProjectsActive`, `renderNalaProjectsList(items)`, `escapeProjectText(s)`, `loadNalaProjects()` — kompletter Lifecycle, alle pure-DOM
-- Lazy-Load: `switchSettingsTab(tab)` ruft `loadNalaProjects()` wenn `tab === 'projects'`|spart Roundtrip wenn der User nur Theme ändern will|Cache in `window.__nalaProjectsCache` für In-Modal-Klicks ohne Re-Fetch
-- Zombie-ID-Schutz: nach jedem `loadNalaProjects` wird geprüft ob die aktive ID noch in der Liste auftaucht|wenn nicht (gelöscht oder archiviert in der Zwischenzeit) → `clearActiveProject()`|verhindert dass der Header-Chip an einer Zombie-ID hängt und das Backend einen non-existing-project-Header bekommt
-- XSS-Schutz: `escapeProjectText(s)` wandelt `&`, `<`, `>`, `"`, `'` in HTML-Entities|alle drei User-Felder (name, slug, description) laufen durch escapeProjectText im Listen-Renderer|Source-Audit-Test zählt mindestens drei Aufrufe in `renderNalaProjectsList`, damit ein vergessener Aufruf in zukünftigen Refactorings sofort auffällt
-- Initialisierung: `renderActiveProjectChip()` läuft am Ende von `showChat()` (nach Login)|stellt Chip aus localStorage wieder her ohne Server-Roundtrip
-- Tests: 21 in [`test_nala_projects_tab.py`](zerberus/tests/test_nala_projects_tab.py) (6 Endpoint inkl. 401, archived-versteckt, persona_overlay-NICHT-im-Response, minimal-Felder; 11 Source-Audit für Tab/Panel/Chip/JS/Header-Injektion/Lazy-Load; 2 XSS inkl. Min-Count escapeProjectText; 1 Zombie-ID; 1 Tab-Lazy-Load)|Plus 1 nachgeschärfter Test in `test_settings_umbau.py`: alter `openSettingsModal()`-Proxy-Check → spezifischer 🔧-Emoji + `icon-btn` mit openSettingsModal als alleinige Action|P201 erlaubt openSettingsModal im Header NUR via Project-Chip (gleichzeitig mit `switchSettingsTab('projects')`)
-
-## PWA-Verdrahtung Nala + Hel (P200 — Phase 5a #16)
-- Eigener Router [`zerberus/app/routers/pwa.py`](zerberus/app/routers/pwa.py) mit vier Endpoints: `/nala/manifest.json`, `/nala/sw.js`, `/hel/manifest.json`, `/hel/sw.js`|KEINE Auth-Dependencies (anders als `hel.router`)
-- Reihenfolge zwingend: `app.include_router(pwa.router)` MUSS in `main.py` VOR `app.include_router(hel.router)` stehen — sonst gilt `verify_admin` für `/hel/manifest.json` und `/hel/sw.js` und der Browser kriegt Auth-Challenge beim Manifest-Fetch (Install-Prompt erscheint nie)
-- SW-Scope folgt Pfad-Konvention: `/nala/sw.js` → scope `/nala/`, `/hel/sw.js` → scope `/hel/`|kein `Service-Worker-Allowed`-Header nötig|jede App cacht NUR ihre eigenen URLs
-- Manifeste pro App, nicht ein gemeinsames: `NALA_MANIFEST` (theme `#0a1628`, short_name `Nala`, scope `/nala/`) + `HEL_MANIFEST` (theme `#1a1a1a`, short_name `Hel`, scope `/hel/`) als Pure-Python-Dicts in `pwa.py`
-- Pflichtfelder pro Manifest: `name`, `short_name`, `start_url`, `scope`, `display: "standalone"`, `theme_color`, `background_color`, `icons` (Liste mit MIN 192+512 px, `type: "image/png"`, `purpose: "any maskable"`)
-- Service-Worker-Logik via `render_service_worker(cache_name, shell)` Pure-Function: install precacht App-Shell-Liste, activate räumt alte Caches mit anderem Versionsschlüssel, fetch macht network-first mit cache-fallback (damit Updates direkt durchgehen)|non-GET-Requests passen unverändert durch (kein Cache für POST/PUT/etc.)|`skipWaiting()` + `clients.claim()` nehmen die neue SW-Version sofort online ohne Reload-Pflicht
-- Icons unter `zerberus/static/pwa/{nala,hel}-{192,512}.png`, generiert via [`scripts/generate_pwa_icons.py`](scripts/generate_pwa_icons.py) — deterministisch, Re-Run liefert bytes-identische PNGs|Kintsugi-Stil: dunkler Hintergrund, großer goldener/roter Initial-Buchstabe, drei Bruchnaht-Adern in Akzentfarbe|Font-Suche: Georgia/Times/DejaVuSerif/Arial mit PIL-Default als Fallback
-- HTML-Verdrahtung Nala (`<head>` von `NALA_HTML`): `<link rel="manifest" href="/nala/manifest.json">`, `<meta name="theme-color" content="#0a1628">`, `<meta name="apple-mobile-web-app-capable" content="yes">`, `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`, `<meta name="apple-mobile-web-app-title" content="Nala">`, zwei `<link rel="apple-touch-icon">`-Einträge (192 + 512)
-- HTML-Verdrahtung Hel analog mit Theme `#1a1a1a`, Title "Hel", Hel-Icons
-- SW-Registrierung als kleines `<script>` vor `</body>` in beiden HTMLs: Feature-Detect (`'serviceWorker' in navigator`), `window.addEventListener('load', ...)`, `navigator.serviceWorker.register('/<app>/sw.js', { scope: '/<app>/' })`|`.catch()` loggt nach `console.warn` mit Tag `[PWA-200]`
-- Bewusst weggelassen: Offline-Modus (Server muss eh laufen), Push-Notifications (Huginn besetzt das), Background-Sync, Service-Worker-Allowed-Header (Scope ergibt sich aus dem Pfad)
-- Tests: 39 in [`test_pwa.py`](zerberus/tests/test_pwa.py) (5 Pure-Function für SW-Render, 6 Manifest-Dict-Validierung, 4 Endpoint-Direct-Calls, 8 Source-Audit pro HTML, 4 Icon-Existenz inkl. PNG-Magic-Byte-Check, 3 Routing-Order in `main.py`, 2 Generator-Skript-Existenz)|Keine TestClient-Setup nötig — alle Endpoints sind direkt als Coroutines aufrufbar (Pattern wie `test_projects_endpoints.py`)
-
-## Projekte (P194 — Phase 5a #1, Backend)
-- Tabellen: `projects(id, slug UNIQUE, name, description, persona_overlay JSON-TEXT, is_archived, created_at, updated_at)` + `project_files(id, project_id, relative_path, sha256, size_bytes, mime_type, storage_path, uploaded_at, UNIQUE(project_id, relative_path))` in `bunker_memory.db` (Decision 1, 2026-05-01)
-- Repo: [`zerberus/core/projects_repo.py`](zerberus/core/projects_repo.py) — async Pure-Functions (`create_project`/`get_project`/`get_project_by_slug`/`list_projects`/`update_project`/`archive_project`/`unarchive_project`/`delete_project`/`register_file`/`list_files`/`get_file`/`delete_file`)|Helper: `slugify()`, `compute_sha256()`, `storage_path_for()`
-- Models bewusst dependency-frei: keine ORM-Relations, keine `Column(ForeignKey)`|Cascade per Repo (`delete_project` führt explizites `DELETE FROM project_files WHERE project_id = ?` aus)
-- Composite-UNIQUE `(project_id, relative_path)` MUSS als `__table_args__ = (UniqueConstraint(...),)` im Model — sonst greift Constraint nicht in Test-Fixtures (siehe lessons.md/Datenbank)
-- Slug-Generator: lowercase, `[^a-z0-9]+` → `-`, max 64 Zeichen, Kollisions-Suffix `-2`/`-3`/...|Empty-Fallback `"projekt"`|Slug ist immutable (Rename per Drop+Recreate)
-- Persona-Overlay: JSON-Dict `{"system_addendum": "...", "tone_hints": [...]}` für Decision 3 (Merge-Layer System → User → Projekt|kein Override)|Repo serialisiert/deserialisiert, Caller arbeitet mit Dicts
-- Storage-Konvention: `data/projects/<slug>/<sha256[:2]>/<sha256>`|Sha-Prefix verhindert Hotspot-Ordner|Bytes liegen NICHT in DB|Cleanup-Job für Storage-Dateien beim Hard-Delete kommt separat (sha kann projektübergreifend referenziert sein)
-- Endpoints: `/hel/admin/projects` (GET list, POST create) + `/hel/admin/projects/{id}` (GET, PATCH, DELETE) + `/.../archive` + `/.../unarchive` + `/.../files`|Admin-only via Hel-Basic-Auth (`verify_admin`)|NICHT unter `/v1/` — `/v1/` ist Dictate-App-Lane (Hotfix 103a)
-- Migration: Alembic `b03fbb0bd5e3_patch194_projects` (down_revision `7feab49e6afe`)|idempotent via `_has_table()`-Guard|Indexe: `uq_projects_slug`, `idx_projects_is_archived`, `idx_project_files_project`, `idx_project_files_sha`
-- Tests: 28 in [`test_projects_repo.py`](zerberus/tests/test_projects_repo.py) + 18 in [`test_projects_endpoints.py`](zerberus/tests/test_projects_endpoints.py)|`tmp_db`-Fixture analog `test_memory_store.py`|Endpoint-Tests rufen Coroutines direkt auf (kein TestClient, gleiches Muster wie `test_huginn_config_endpoint.py`)
-- Logging-Tag: `[PROJECTS-194]`
-- UI-Tab in Hel folgt in P195 (Backend-Patch bewusst von UI getrennt — Workflow-Regel "lieber 2 saubere Patches als 3 mit halb fertigem dritten")
-
-## Projekt-RAG-Index (P199 — Phase 5a #3)
-- Helper: [`zerberus/core/projects_rag.py`](zerberus/core/projects_rag.py) — Pure-Functions `_split_prose`, `chunk_file_content`, `top_k_indices`, `format_rag_block`|File-I/O `load_index`, `save_index`, `remove_project_index`, `index_paths_for`|Embedder-Wrapper `_embed_text` (lazy MiniLM-L6-v2)|async `index_project_file`, `remove_file_from_index`, `query_project_rag`
-- Index-Struktur: pro Projekt-Slug eigener Store unter `<projects.data_dir>/projects/<slug>/_rag/{vectors.npy, meta.json}`|Vektoren als float32-Numpy-Array, Meta als JSON-Liste mit identischer Reihenfolge|Pure-Numpy-Linearscan via `argpartition`+`argsort` statt FAISS (Per-Projekt-Indizes sind klein, ~10-2000 Chunks → schneller + Tests dependency-frei)|Atomic Write via `tempfile.mkstemp` + `os.replace`
-- Embedder: MiniLM-L6-v2 (384 dim) als Default|`_embed_text(text)` lazy-loaded — Tests monkeypatchen die Funktion direkt|Hash-basierter 8-dim-Pseudo-Embedder in `fake_embedder`-Fixture verhindert echtes Modell-Laden|Embedder-Dim-Wechsel zwischen Sessions → Index wird beim nächsten Index-Call neu aufgebaut (kein Crash)
-- Chunker-Reuse: Code-Files (.py/.js/.ts/.html/.css/.json/.yaml/.sql) via `code_chunker.chunk_code` (P122)|Prosa (.md/.txt/Default) via lokalem Para-Splitter mit weichen Absatz-Grenzen (max 1500 Zeichen, snap an Doppel-Newline)|Sentence-Split-Fallback für überlange Absätze|Bei Python-SyntaxError → Fallback auf Prose-Splitter
-- Trigger-Punkte: (a) `upload_project_file_endpoint` NACH `register_file`|(b) `materialize_template` ruft am Ende `index_project_file` für jede neu angelegte Skelett-Datei|(c) `delete_project_file_endpoint` ruft `remove_file_from_index` NACH dem DB-Delete|(d) `delete_project_endpoint` merkt Slug VOR Delete + ruft `remove_project_index` danach|alle Trigger sind best-effort (Indexing-Fehler brechen Hauptpfad NICHT ab)
-- Idempotenz: pro `file_id` höchstens ein Chunk-Set im Index|beim Re-Index wird der alte Block für die file_id zuerst entfernt|gleicher `sha256` ergibt funktional dasselbe Ergebnis (deterministischer Embedder)|anderer `sha256` ersetzt den alten Block — vermeidet Doubletten beim Re-Upload mit gleichem `relative_path`
-- Wirkung im Chat: in `legacy.py::chat_completions` NACH P197 (merge_persona) NACH P184 (`_wrap_persona`) NACH P185 (`append_runtime_info`) NACH P118a (`append_decision_box_hint`) NACH P190 (Prosodie), aber VOR `messages.insert(0, system)`|Block beginnt mit `[PROJEKT-RAG — Kontext aus Projektdateien]`|Top-K Hits in Markdown-Sektionen pro File mit `relevance=...`-Score|jeder Fehler → kein Block, Chat läuft normal weiter|max 1 Embed-Call (User-Query) + 1 Linearscan pro Request
-- Feature-Flags: `ProjectsConfig.rag_enabled: bool = True`, `rag_top_k: int = 5`, `rag_max_file_bytes: int = 5 * 1024 * 1024` (5 MB; drüber → skip beim Indexen, weil typisch Bilder/Archive)|alle Defaults im Pydantic-Modell weil `config.yaml` gitignored
-- Defensive Behaviors: leere Datei → skip `reason="empty"`|binäre Datei (UTF-8-Decode-Fehler) → `reason="binary"`|Datei zu groß → `reason="too_large"`|Bytes nicht im Storage → `reason="bytes_missing"`|Embed-Fehler → `reason="embed_failed"`|inkonsistenter Index (nur eine der zwei Dateien) → leere Basis, nächster Index-Call baut sauber auf|kaputtes meta.json → leere Basis|Dim-Mismatch im `top_k_indices` → leeres Ergebnis statt Crash
-- Logging-Tag: `[RAG-199]` zeigt `slug`/`file_id`/`path`/`chunks`/`total` beim Indexen, `chunks_used` beim Chat-Query, `chunks_removed` beim Delete|inkonsistenter/kaputter Index → WARN|Embed/Query-Fehler → WARN mit Exception-Text
-- Tests: 46 in [`test_projects_rag.py`](zerberus/tests/test_projects_rag.py) (5 Prose-Splitter + 5 Chunk-File + 5 Top-K + 4 Save-Load + 2 Remove-Index + 7 Index-File + 2 Remove-File + 4 Query + 2 Format-Block + 3 End-to-End + 1 Materialize-Indexes + 6 Source-Audit)|`fake_embedder`-Fixture mit Hash-basiertem Pseudo-Embedder
-
-## Projekt-Templates (P198 — Phase 5a #2)
-- Helper: [`zerberus/core/projects_template.py`](zerberus/core/projects_template.py) — `render_project_bible(project, *, now=None)` + `render_readme(project)` als Pure-Functions (synchron, deterministisch via `now`)|`template_files_for(project, *, now=None)` liefert Liste `[{relative_path, content, mime_type}]`|`materialize_template(project, base_dir, *, dry_run=False, now=None)` als async DB+Storage-Schicht
-- Skelett-Files (zwei pro Projekt): `ZERBERUS_<SLUG>.md` (Projekt-Bibel mit Sektionen "Ziel", "Stack", "Offene Entscheidungen", "Dateien", "Letzter Stand") + `README.md` (kurze Prosa mit Name + Description)|Inhalt rendert Project-Daten ein (Name, Slug, Description, Anlegedatum)
-- Storage: Bytes liegen unter `<projects.data_dir>/projects/<slug>/<sha[:2]>/<sha>` (gleiche Konvention wie P196-Uploads)|DB-Eintrag in `project_files` mit lesbarem `relative_path`|Templates landen damit nahtlos in der Hel-Datei-Liste, im RAG-Index (P199) und in der Code-Execution-Pipeline (P200)
-- Idempotenz: existierende `relative_path`-Eintraege werden NICHT ueberschrieben (User-Inhalte bleiben unangetastet)|Helper liefert nur die TATSAECHLICH neu angelegten Files zurueck
-- Verdrahtung in [`hel.py::create_project_endpoint`](zerberus/app/routers/hel.py): NACH `projects_repo.create_project()`, mit `await materialize_template(project, _projects_storage_base())`|best-effort: Fehler beim Materialisieren brechen das Anlegen NICHT ab (Projekt-Eintrag steht, Templates lassen sich notfalls nachgenerieren)|Response-Feld `template_files` listet die neu angelegten Eintraege
-- Feature-Flag: `ProjectsConfig.auto_template: bool = True` (Default `True`, kann fuer Migrations-Tests/Bulk-Imports abgeschaltet werden)|Flag-Default in `config.py` weil `config.yaml` gitignored
-- Atomic Write: `_write_atomic()` (lokale Kopie aus `hel._store_uploaded_bytes` — der Template-Helper soll auch ohne FastAPI-Stack laufen koennen, z.B. CLI-Migrations)
-- Git-Init bewusst weggelassen: SHA-Storage ist kein Working-Tree (Bytes liegen unter Hash-Pfaden, nicht unter `relative_path`)|`git init` ergibt erst Sinn mit einem echten `_workspace/`-Layout, das mit der Code-Execution-Pipeline (P200) kommt|kein halbgares Git-Init
-- Tests: 23 in [`test_projects_template.py`](zerberus/tests/test_projects_template.py) (6 Pure-Function-Cases, 6 Materialize-Cases inkl. Idempotenz/dry-run/User-Content-Schutz, 3 End-to-End-Cases inkl. Flag-on/off/Crash-Resilienz, 3 Source-Audit-Cases)|`disable_auto_template`-Autouse-Fixture in `test_projects_endpoints.py` + `test_projects_files_upload.py` haelt deren File-Counts stabil
-- Logging-Tag: `[TEMPLATE-198]` zeigt `slug`/`path`/`size`/`sha[:8]` pro neu angelegter Datei + `skip slug=... path=... (already exists)` bei Idempotenz-Skip
-
-## Sentiment-Triptychon (P192)
-- Modul: [`zerberus/utils/sentiment_display.py`](zerberus/utils/sentiment_display.py) — `bert_emoji()`, `prosody_emoji()`, `consensus_emoji()`, `compute_consensus()`, `build_sentiment_payload()`
-- Drei Kanaele: BERT 📝 (Text-Sentiment), Prosodie 🎙️ (Stimm-Analyse, nur bei Audio), Konsens 🎯 (Fusion)
-- Mehrabian-Regel: `confidence > 0.5` → Prosodie dominiert|sonst Fallback auf BERT
-- Inkongruenz-Erkennung: BERT positiv (`label=positive` UND `score > 0.5`) + Prosodie-Valenz `< -0.2` → 🤔 + `incongruent=true`
-- BERT-Score-Schwellen: `> 0.7` = 😊/😟 (stark), `<= 0.7` = 🙂/😐 (mild), `neutral` immer 😶
-- Prosodie-Mood-Mapping (10 Werte): `happy=😊`/`excited=🤩`/`calm=😌`/`sad=😢`/`angry=😠`/`stressed=😰`/`tired=😴`/`anxious=😬`/`sarcastic=😏`/`neutral=😶`
-- Frontend: `.sentiment-triptych` mit drei `.sent-chip`-Spans (BERT/Prosodie/Konsens)|44px Touch-Targets|Hover/`:active` Sichtbarkeit analog `.msg-toolbar`-Pattern (P139)|User-Bubbles links (`flex-start`), Bot-Bubbles rechts (`flex-end`)|`.sent-incongruent` faerbt Konsens-Chip gold bei Widerspruch
-- Backend: `/v1/chat/completions` liefert `sentiment: {user: {bert,prosody,consensus}, bot: {bert,prosody,consensus}}` ADDITIV — OpenAI-Clients ignorieren das Feld
-- Logging-Tag: `[SENTIMENT-192]`
-
-## Whisper-Endpoint Enrichment (P193)
-- `/v1/audio/transcriptions` Response: `text` bleibt IMMER (Backward-Compat fuer Dictate/SillyTavern/Generic-Clients)|optional `prosody` (P190) und neu `sentiment.bert.{label,score}` + optional `sentiment.consensus.{emoji,incongruent,source}`
-- Backward-Compat-Audit: `response = {"text": cleaned_transcript}` MUSS vor jedem additiven Feld initialisiert sein — Source-Audit-Test in [`test_whisper_enrichment.py`](zerberus/tests/test_whisper_enrichment.py) prueft die Reihenfolge
-- `/nala/voice` JSON-Response identisch erweitert (zusaetzliches `enrichment`-Feld) + SSE-Events `event: prosody` + `event: sentiment` ueber `/nala/events`|Triptychon-Frontend kann sync (JSON) oder async (SSE) konsumieren
-- SSE-Generator in [`nala.py::sse_events`](zerberus/app/routers/nala.py) emittiert named SSE-Events nur fuer `prosody` und `sentiment`|alle anderen Event-Types behalten das default-`data:`-only Format
-- Fail-open: BERT-/Konsens-Fehler erzeugt Logger-Warnung mit Tag `[ENRICHMENT-193]`, `sentiment`-Feld bleibt weg, Endpoint laeuft sauber durch
-- Logging-Tag: `[ENRICHMENT-193]`
-
-## Auto-TTS (P186)
-- Toggle: `Antworten automatisch vorlesen` im Settings-Tab `Ausdruck`|UNTER Stimmen-Dropdown + Rate-Slider|44px Touch-Target|`id="autoTtsToggle"`
-- localStorage-Key: `nala_auto_tts` ("true"/"false")|Default `false`|Check via `=== 'true'` (alles andere → false)
-- Trigger: NACH `addMessage(reply, 'bot')` im non-streaming Chat-Pfad (entspricht SSE-done-Moment)|nicht pro Chunk
-- Endpoint: nutzt bestehenden `POST /nala/tts/speak` (edge-tts seit P143)|gleiche Stimme + Rate wie 🔊-Button
-- Audio-Stop bei: `loadSession`, `doLogout`, `handle401`, Toggle-OFF (`onAutoTtsToggle(false)`)
-- Audio-Referenz: `window.__nalaAutoTtsAudio` (analog SSE-Watchdog-Pattern)
-- Stille Degradation bei Fehler: `console.warn('[AUTO-TTS-186] ...')`|kein Error-Popup
-- KEIN Backend-Change|TTS-Endpunkte unveraendert seit P143
-
-## RAG Dual-Embedder (P187)
-- Flag: `modules.rag.use_dual_embedder` in config.yaml|Default `false` in `config.yaml.example` (Backward-Compat nach `git clone`)|lokal seit 2026-05-01 auf `true`
-- DE-Modell: `T-Systems-onsite/cross-en-de-roberta-sentence-transformer` auf GPU|EN-Modell: `intfloat/multilingual-e5-large` auf CPU
-- Indices: `data/vectors/de.index` + `de_meta.json` (DE-Chunks)|`en.index` + `en_meta.json` (EN-Chunks, optional)|Legacy `faiss.index` bleibt erhalten als MiniLM-Fallback
-- `_select_index_and_meta(language)` in [`router.py`](zerberus/modules/rag/router.py): waehlt DE/EN-Index|Fallback DE wenn EN-Index fehlt
-- `_encode(text, language=None)` reicht erkannte Sprache an `DualEmbedder.embed()`|Dimensions-Mismatch zwischen Modellen bleibt im jeweiligen Index gekapselt
-- Migration: `scripts/migrate_embedder.py --execute`|Backup nach `data/backups/pre_patch129_*` (auch fuer P187 wiederverwendet)
-- Backward-Compat: Flag `false` → MiniLM-Pfad unveraendert (Pre-P133)
-- Logging-Tags: `[DUAL-187]` (Init + Index-Load), `[RAG-187]` (Encode-Switch im DEBUG)
-
-## Prosodie-Pipeline (P188 Foundation + P189 Backend + P190 Pipeline + P191 Consent)
-- Modul: [`zerberus/modules/prosody/`](zerberus/modules/prosody/)|`manager.py` + `gemma_client.py` (P189) + `prompts.py` (P189) + `injector.py` (P190)
-- Config: `modules.prosody.{enabled, model_path, mmproj_path, server_url, llama_cli_path, device, n_gpu_layers, timeout_seconds, vram_threshold_gb, output_format}`|alle Defaults im Code (config.yaml gitignored)
-- Backend P189: `GemmaAudioClient` mit Dual-Path|CLI (`llama-mtmd-cli` Subprocess pro Call) ODER Server (`llama-server` HTTP)|`mode`-Property routet automatisch
-- `mode` = `none` (Stub) / `cli` (Pfad A, JETZT) / `server` (Pfad B, wartet auf llama.cpp Issue #21868)
-- Pfad A funktioniert JETZT|Pfad B nur Code-Skelett — `input_audio` Content-Block in `llama-server` noch nicht gemergt
-- JSON-Parsing: robust gegen Markdown-Wrapper (```json ... ```), Freitext, kaputtes JSON|Fallback auf Stub
-- `analyze()` routing|enabled=False oder mode=none → Stub (P188-Verhalten)|sonst → `client.analyze_audio()`
-- `is_active`-Property (P190): enabled UND mode != none|Pipeline-Gate für `asyncio.gather`
-- Pipeline P190: Whisper + Gemma PARALLEL via `asyncio.gather(return_exceptions=True)` in `/nala/voice` und `/v1/audio/transcriptions`
-- Whisper-Fehler = harter Fehler (raise)|Prosodie-Fehler = weicher Fehler (Whisper läuft alleine)
-- Frontend reicht Prosodie-Result aus `/nala/voice`-Response (`prosody`-Feld) als `X-Prosody-Context`-Header an `/v1/chat/completions` weiter
-- Injector P190: `inject_prosody_context(sys_prompt, prosody_result)` in [`injector.py`](zerberus/modules/prosody/injector.py)|fügt Block HINTER System-Prompt
-- Injector-Gating: kein Block bei source=stub oder confidence<0.3|valence<-0.3 → Inkongruenz-Warnung („Stimme klingt anders als Text vermuten lässt")
-- Consent P191: Frontend-Toggle „Sprachstimmung analysieren (Prosodie)"|localStorage `nala_prosody_consent` (Default `false`)|Header `X-Prosody-Consent: true` nur bei aktiv
-- Pipeline-Gate Endpoint: `is_active AND consent` (UND-Verknüpfung — beide müssen wahr sein)
-- Visueller Indikator 🎭 neben Mikrofon-Button (nur sichtbar bei Consent=on)
-- Hel-Admin-Endpoint `GET /hel/admin/prosody/status`: NUR Aggregate (mode, success_count, error_count, last_success_ts)|KEINE individuellen mood/valence/arousal Felder
-- Worker-Protection: tmp-Audio-Datei wird im `finally:` per `unlink()` entsorgt|KEIN Schreiben in `interactions`-Tabelle|KEIN Logging von Audio-Rohdaten
-- `healthcheck()` reasons: `disabled`/`no_model`/`model_not_found`/`no_cuda`/`not_enough_vram`/`ok`|nutzt `_cuda_state()` aus RAG-Device-Helper (P111)
-- main.py-Lifespan: loggt Status `Prosodie ok / skip / fail` im Startup-Banner
-- Modell: Gemma 4 E2B (Q4_K_M GGUF ~3.4 GB) + mmproj (BF16 ~940 MB)|liegen unter `C:\Users\chris\models\gemma4-e2b\`
-- Logging-Tags: `[PROSODY-188]` (Startup/Healthcheck), `[PROSODY-STUB-188]` (Stub-Aufrufe im DEBUG), `[PROSODY-189]`/`[PROSODY-189-CLI]`/`[PROSODY-189-SRV]` (Backend), `[PROSODY-190]` (Pipeline+Injector), `[PROSODY-CONSENT-191]` (Frontend), `[PROSODY-ADMIN-191]` (Hel-Status)
-
-## Globale Wissensbasis
-- Repo: https://github.com/Bmad82/Claude (PUBLIC|keine Secrets/Keys/IPs/interne URLs)
-- lessons/ nur bei Bedarf prüfen|nicht rituell bei jedem Patch
-- Nach Abschluss: universelle Erkenntnisse dort eintragen
-
-## Token-Effizienz
-- Datei bereits im Kontext → NICHT nochmal lesen|nur lesen wenn (a) nicht sichtbar ODER (b) direkt vor Write
-- Doku-Updates am Patch-Ende|ein Read→Write-Zyklus pro Datei
-- CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md: Bibel-Fibel-Format (Pipes|Stichpunkte|ArtikelWeg)
-- SUPERVISOR/PROJEKTDOKU/README/Patch-Prompts: Prosa (menschliche Leser)
-- Neue Einträge in CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md IMMER im komprimierten Format schreiben
+### 6. Repo-Sync (Pflicht-Letztschritt)
+Nach `git push`: `sync_repos.ps1` DANN `scripts/verify_sync.ps1` — beide Pflicht. Bei ❌ Exit 1: NICHT weitermachen, Sync-Problem loesen. Patch gilt erst bei ✅ Exit 0 als abgeschlossen. Detail: [`playbooks/observability.md`](playbooks/observability.md).
 
 ## Marathon-Workflow (Phase 5+)
-- Session-Start-Pflicht (Konsolidierung 2026-05-15, mw-v2a 2026-05-21): FEATURE_REQUEST_ZERBERUS.md → mjolnir.md → HANDOVER_ZERBERUS.md → MARATHON_WORKFLOW_ZERBERUS.md → `python scripts/lessons_lookup.py --task '<aktuelle Aufgabe>'` (NICHT lessons_ZERBERUS.md komplett laden — TF-IDF-Retrieval liefert Top-3 relevante Bloecke; bei 0 Treffern: Aufgabe ist neu, kein Lesson-Kontext) → loslegen
-- Ziele statt Rezepte|WAS nicht WIE|eigene Architektur-Entscheidungen erwünscht
-- Stopp bei ~400k Token oder Kontextvergiftung|aktuellen Patch sauber fertig → Doku → Handover → STOPP
-- Blockiert → Frage in DECISIONS_PENDING parken → nächsten unabhängigen Patch nehmen
-- Session-Ende: HANDOVER_ZERBERUS.md überschreiben|Manuelle-Tests-Liste pflegen|Patch-Status in MARATHON_WORKFLOW_ZERBERUS.md aktualisieren
-- Push + sync_repos.ps1 + scripts/verify_sync.ps1 als letzter Schritt
-- **Worktree-Branch IMMER nach main mergen vor Session-Ende|sonst läuft Server auf altem Code auch wenn Patch committed ist|Reihenfolge: merge → push main → HANDOVER schreiben** (Anlass P217: Patch lag fertig auf `claude/upbeat-golick-e85610`, Server las main, FAISS-Fix war committed aber nicht aktiv|User konnte trotz fertigem Patch nichts hochladen). Konkret im Hauptcheckout: `cd C:\Users\chris\Python\Zerberus && git merge <worktree-branch> --ff-only && git push origin main` (Pfad seit B-061/2026-05-16; alt: `Rosa\Nala_Rosa\Zerberus`). Wenn Merge ausnahmsweise NICHT erfolgt → im HANDOVER explizit vermerken: "Branch noch nicht auf main gemergt — Server zieht alten Code, Patch ist NICHT aktiv."
-- **Session-Start: NICHT fragen "was soll ich machen" (P219-pre — Prozess-Regel)** — die HANDOVER-Empfehlung am Ende des "Nächster Schritt"-Abschnitts ist der Default. Coda lädt HANDOVER_ZERBERUS.md, liest die Empfehlung, legt los. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird davon abgewichen. Die Antwort "Was möchtest du — A, B oder C?" ist hier verboten — Chris will Ergebnisse sehen, nicht Rückfragen beantworten. Verweis: das ist die Marathon-Variante der allgemeinen FR-AUTONOME-PRIORITÄT-Regel oben.
-- **HANDOVER-Formulierung am Session-Ende auch autonom (P219-pre)** — Statt "Was soll ich machen — A, B oder C?" als Schlussfrage schreibt Coda eine Empfehlung in der Form "Nächste Session startet mit X (Begründung — z.B. niedrigster Aufwand / direkte Schulden-Folgekarte / User-Bug-Report). Falls Chris was anderes will, überschreibt er die Eröffnungs-Message." Die nächste Coda-Instanz kann dann ohne Rückfrage loslegen. Nur Architektur-Entscheidungen mit echtem Risiko bleiben als Frage stehen (in DECISIONS_PENDING).
 
-## Session-Auffüll-Regel (2026-05-21, Kintsugi-Migration Token-Audit)
-Primärer Auftrag erledigt UND < 300k Token verbraucht → weiterarbeiten, nicht abschließen|Auffüll-Reihenfolge: (1) FEATURE_REQUEST Restpunkte (2) MARATHON_WORKFLOW offene Items (3) BACKLOG (4) Test-Schulden (5) Doku-Hygiene|Stopp bei ~350k (50k Reserve für Doku)|Zwischen-Patches: eigener Commit, ABER kein separater HANDOVER — ein HANDOVER am Session-Ende für alle|AUSNAHME: destruktive/riskante Patches NIE als Auffüller|Anti-Pattern: "Patch fertig bei 120k → Doku → STOPP" = 80% Overhead
+- **Session-Start-Pflicht** (mw-v2a 2026-05-21): FEATURE_REQUEST_ZERBERUS.md → mjolnir.md → HANDOVER_ZERBERUS.md → MARATHON_WORKFLOW_ZERBERUS.md → `python scripts/lessons_lookup.py --task '<Aufgabe>'` (NICHT lessons_ZERBERUS.md komplett laden — TF-IDF Top-3; bei 0 Treffern: Aufgabe ist neu). Dann loslegen.
+- Ziele statt Rezepte | WAS nicht WIE | eigene Architektur-Entscheidungen erwuenscht.
+- Stopp bei ~400k Token oder Kontextvergiftung | aktuellen Patch sauber fertig → Doku → Handover → STOPP.
+- Blockiert → Frage in `DECISIONS_PENDING.md` parken → naechsten unabhaengigen Patch nehmen.
+- **Worktree-Branch IMMER nach main mergen vor Session-Ende** | sonst laeuft Server auf altem Code (P217-Anlass). Konkret: `cd C:\Users\chris\Python\Zerberus && git merge <branch> --ff-only && git push origin main`. Wenn ausnahmsweise NICHT: im HANDOVER „Branch noch nicht gemergt — Patch NICHT aktiv".
+- **Session-Start: NICHT fragen „was soll ich machen"** (P219-pre) — die HANDOVER-Empfehlung am Ende des „Naechster Schritt"-Abschnitts ist der Default. Coda laedt HANDOVER, liest Empfehlung, legt los. Nur wenn Chris in der Eroeffnungs-Message explizit eine andere Aufgabe reingibt, davon abweichen.
+- **HANDOVER „Naechster Schritt" — GENAU EIN Default als Feststellung**, KEINE Optionsliste. „Naechster Schritt ist X (Begruendung)." — Punkt. Alternativen die Chris entscheiden muss → DECISIONS_PENDING (nur bei echtem Architektur-Risiko). Umkehr-Exklusiv: Coda entscheidet IMMER selbst, AUSSER User hat explizite Prioritaet gesetzt.
 
-## HANDOVER "Nächster Schritt" — Autonomie-Regel (verschärft)
-- GENAU EIN Default als Feststellung, KEINE Optionsliste|"Nächster Schritt ist X (Begründung)." — Punkt.
-- Alternativen die Chris entscheiden muss → DECISIONS_PENDING (NUR bei echtem Architektur-Risiko)
-- Informationelle Erwähnungen ("Schulden #3 und #4 sind auch noch offen") sind OK als Kontext — aber NICHT als "oder stattdessen..." formulieren
-- Coda liest HANDOVER → nimmt den Default → legt los. KEINE Rückfrage.
-- EINZIGE Ausnahme: Chris schreibt in der Eröffnungs-Message explizit eine andere Aufgabe rein
-- Umkehr-Exklusiv: Coda entscheidet IMMER selbst, AUSSER der User hat eine explizite Priorität gesetzt. Nicht andersrum.
-- Anlass: Trotz P219-pre-Regel hat Coda mehrfach "Was soll ich machen?" gefragt — weil die HANDOVER Optionslisten enthielt die als Aufforderung gelesen wurden
+## Session-Auffuell-Regel (2026-05-21)
 
-## Pflicht nach jedem Patch
-- SUPERVISOR_ZERBERUS.md aktualisieren: Nummer|Datum|3-5 Zeilen Inhalt
-- Offene Items: erledigte raus|neue rein
-- Architektur-Warnungen: nur bei Änderung
-- SUPERVISOR_ZERBERUS.md = einzige Datei für Supervisor-Claude beim Session-Start
-- PROJEKTDOKUMENTATION.md = vollständiges Archiv, nur bei Bedarf konsultiert
-- Vollständige Doku: `docs/PROJEKTDOKUMENTATION.md`
-- [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur-Änderungen aktualisieren|hängt am Projektstand|wenn SUPERVISOR aktualisiert wird, wird diese Datei AUCH aktualisiert|Inhalt = aktueller Zustand (KEINE Patch-Historie)|natürliche Sprache für RAG-Chunking|Spiegel-Kopie [`docs/RAG Testdokumente/huginn_kennt_zerberus.md`](docs/RAG%20Testdokumente/huginn_kennt_zerberus.md) parallel mitziehen|nach Update Chris-Upload via `curl -u Chris:... -F file=@docs/huginn_kennt_zerberus.md -F category=system http://localhost:5000/hel/admin/rag/upload`|`category=system` ist Pflicht (P178-Filter)
-
-## Deliverable-Smoke (Pflicht)
-- Kein Deliverable ohne funktionalen Smoke|HTML/JSON/Script → Datei öffnen/parsen/Ergebnis prüfen VOR Patch-Abschluss
-- "Syntax valide" ≠ Smoke — Smoke = "verhält sich wie erwartet wenn User es öffnet"
-- HTML mit eingebettetem JSON → JSON extrahieren + parsen + Items zählen + prüfen dass >0
-- Script das Output erzeugt → Output existiert + ist nicht leer + hat erwartete Struktur
-- Fehlende Smoke = Patch NICHT abgeschlossen
-- Anlass: Feature-Audit-HTML (Post-P-debt-12) hatte valides JS aber kaputtes inline-JSON — User sah leere Seite, hätte 10 Sekunden Smoke-Test gekostet
-
-## Auto-Test-Policy (P165, verschaerft P213-pre-6)
-- GRUNDSATZ: Alles was Coda testen kann → Coda testet|Mensch nur für Untestbares
-- CODA TESTET:
-  - Unit/Integration-Tests (pytest)|API-Calls gegen echte Services (OpenRouter/Telegram/Whisper)
-  - System-Prompt-Validation (LLM-Output-Format)|Config-Konsistenz (YAML-Keys vs Code)
-  - Doku-Konsistenz (Patch-Nummern|Datei-Referenzen|tote Links|README-Footer)
-  - Regressions-Sweep nach jedem Patch|Import/AST-Checks|Log-Tag-Konsistenz
-  - Live-Validation-Scripts in `scripts/` (wie `validate_intent_router.py`)
-  - **System-Verhaltens-Tests (Integration-Layer, P213-pre-6)** — Server starten via `start_stable.bat` (kein Reload-Watcher), echten Endpoint/Lookup aufrufen, Antwort gegen Erwartung pruefen. Nicht "der Code laeuft korrekt", sondern "das System liefert das richtige Ergebnis"
-- MENSCH TESTET (nicht delegierbar):
-  - UI-Rendering auf echtem Gerät (iPhone/Android)|Touch-Feedback|visuelles Layout
-  - Telegram-Gruppen-Dynamik mit echten Usern (Forwards|Edits|Multi-User)
-  - Whisper mit echtem Mikrofon + Umgebungsgeräusche
-  - UX-Gefühl ("fühlt sich richtig an")
-- NACH JEDEM PATCH: Coda führt `pytest zerberus/tests/ -v --tb=short` aus|bei Failures: fixen BEVOR Commit
-- LIVE-VALIDATION: Bei neuen Features die externe APIs nutzen → Validation-Script in `scripts/` anlegen + ausführen
-- DOKU-CHECKER: `scripts/check_docs_consistency.py` (P165) prüft Patch-Nummer-Sync|Tote Links|Log-Tag-Konsistenz|Imports|Settings-Keys|nach jedem Patch laufen lassen, additiv zu pytest
-- RETROAKTIV: Code-Stellen ohne Tests gefunden → Tests nachrüsten (kein separater Patch nötig)
-
-## Integration-Test-Pflicht (P213-pre-6)
-- **Vor jedem "Chris muss noch testen"-Eskalations-Vermerk gilt die Frage: kann ich das selbst testen?** Server starten, echten Call machen, echte Antwort pruefen — wenn JA, Test schreiben und ausfuehren, NICHT eskalieren. Nur wenn die Antwort wirklich NEIN ist (echtes Geraet / echtes Mikrofon / echter Telegram-Client / subjektive UX) ist die Eskalation an Chris/Jojo legitim
-- **Konvention:** Integration-Test-Dateien heissen `test_integration_*.py`, tragen `pytestmark = pytest.mark.integration` (oder `@pytest.mark.integration` per Test). Default-pytest ueberspringt sie via `pytest.ini addopts = -m "not e2e and not guard_live and not integration"`. Aufruf: `pytest -m integration` oder via Sync-Tool-Auto-Hook
-- **Skip-statt-Fail-Vertrag:** Wenn der Server / Index / externe Service nicht erreichbar ist, MUSS der Test `pytest.skip(...)` aufrufen, nicht failen — sonst kann Coda den Marker nicht in der CI laufen lassen
-- **Server starten autonom:** Coda startet den Server bei Bedarf via `start_stable.bat` (P213-pre-4, ohne Reload-Watcher), wartet auf Health-Check, fuehrt Tests aus, stoppt bei Bedarf. Reload-Watcher (`start.bat`) ist ungeeignet, weil Tool-Edits den Server-State zerschiessen
-- **Sync-Tool-Auto-Verifikation (P213-pre-6):** `python -m tools.sync_huginn_rag` ruft nach erfolgreichem Sync automatisch `pytest -m integration -k huginn_rag` auf. Wenn der Test fehlschlaegt, kippt der Sync-Exit-Code auf 1 — Coda sieht den Fehler sofort und kann den Doku-Drift beheben. Override via `--skip-integration-test`
-- **Erste Referenz-Implementierung:** `zerberus/tests/test_integration_huginn_rag.py` mit vier Asserts (Stand-Anker-Hauptquery, Systemname, Anti-Halluzinations-Check, Para­phrasen-Match). Spiegelt die P213-pre-4-Live-Verifikation; haette die gesamte P213-pre-Saga auf einen Patch reduziert
-- **Strukturelle Absicherung:** `zerberus/tests/test_p213_pre_6_integration_framework.py` enthaelt Source-Audits, die das Framework gegen versehentliches Entfernen schuetzen — pytest.ini-Eintrag, conftest-Marker, Test-File-Existenz, Sync-Tool-Hook-Konstanten, CLAUDE_ZERBERUS-Regel-Eintrag, lessons-md-Lehre
-- **Schulden-Konvention "Live-Verifikation steht aus":** Wenn ein vorheriger Patch noch ein offenes "Chris muss noch testen" hat, das automatisierbar waere, ruestet Coda opportunistisch einen Integration-Test nach — nicht alle auf einmal, sondern wenn der naechste Patch sowieso in der Naehe ist. Pflicht: jeder neue Pipeline-/RAG-/Auth-/Sync-Patch geht mit mindestens einem Integration-Test einher, sofern automatisierbar
-
-## Huginn-RAG-Selbstwissen (P178)
-- Huginn ruft vor jedem LLM-Call `_huginn_rag_lookup(user_msg, settings)` in [`zerberus/modules/telegram/router.py`](zerberus/modules/telegram/router.py)|Treffer landen via `_inject_rag_context` als "--- Systemwissen ---"-Block VOR der Intent-Instruction im System-Prompt|sowohl Legacy-Pfad (`_process_text_message`) als auch P174-Pipeline-Pfad (`handle_telegram_update`) angeschlossen
-- **Category-Filter ist Datenschutz-Schicht**|Default `modules.telegram.rag_allowed_categories=["system"]`|persoenliche/narrative/lore/reference/general-Chunks werden HART verworfen, bevor sie das LLM sehen|Filter greift NACH `_search_index`, also nach Reranking — wir trauen dem Index nicht
-- Neue Kategorie `system` in [`hel.py`](zerberus/app/routers/hel.py)|`_RAG_CATEGORIES` + `CHUNK_CONFIGS["system"]={chunk_size:200, overlap:40, min_chunk_words:30, split:"none"}` (P178b-Tuning fuer kleine FAQ-/Tabellen-Bloecke wie „Was Zerberus NICHT ist" / Mythologie-Tabelle, sonst schluckt der Residual-Merge sie)|ohne diese Erweiterung wuerde Upload mit `category=system` auf "general" zurueckfallen
-- Test-Coverage P178: 16 neue Tests in [`test_huginn_rag.py`](zerberus/tests/test_huginn_rag.py)|Suite-Total nach P178b: 981 Tests gruen
-- **Live-Test-Findings P178 — Status:** L-178a (Guard kennt RAG nicht) → ✅ ERLEDIGT in P180 via `rag_context`-Parameter|L-178b (Guard kennt Persona nicht) → ✅ ERLEDIGT in P180 via Persona-Cap 300→800|L-178c (ADMIN zu sensitiv) → ✅ ERLEDIGT in P182 via Plausi-Heuristik|L-178e (Allowlist fehlt) → ✅ ERLEDIGT in P181|L-178g (Voice-DM lautlos) → ✅ ERLEDIGT in P182 via Unsupported-Media-Handler|L-178d (system-Kategorie im Hel-Dropdown) → ✅ ERLEDIGT in P178c
-- Huginn-Doku liegt in [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md)|hochladen via `curl -u Chris:... -F file=@docs/huginn_kennt_zerberus.md -F category=system http://localhost:5000/hel/admin/rag/upload`|MUSS category=system sein, sonst greift der Filter nicht
-- Graceful Degradation|RAG-Modul aus, RAG_AVAILABLE=False, Exception, leerer Query, keine erlaubte Kategorie im Top-K → leerer String → System-Prompt unveraendert → Fastlane-Fallback|Huginn antwortet wie Pre-P178
-- Konfig|`modules.telegram.rag_enabled` (Default `True`)|`rag_allowed_categories: ["system"]` (Default-Liste)|`rag_top_k: 5` (Over-Fetch-Faktor 4 fuer Filter)|in config.yaml setzbar, Defaults stehen in `_HUGINN_RAG_DEFAULT_*` Konstanten am Top der Sektion in router.py
-- Logs|`[HUGINN-178] RAG-Lookup: query=... → N system-chunks (M gefiltert)`|bei Exception: `[HUGINN-178] RAG-Lookup fehlgeschlagen: ...`|alles WARNING+ darunter INFO
-
-## Pipeline-Cutover-Feature-Flag (P177)
-- `modules.pipeline.use_message_bus: false` (Default)|`true` → `process_update` delegiert an `handle_telegram_update` (Adapter+Pipeline)|false → `_legacy_process_update` (Pre-P177-Body unveraendert)
-- Live-Switch: Flag wird pro Call gelesen, kein Settings-Cache|uvicorn `--reload` greift sofort, kein Server-Neustart noetig|Test-Pattern in [`test_cutover.py`](zerberus/tests/test_cutover.py): zwei aufeinanderfolgende Calls mit unterschiedlichem Flag treffen unterschiedliche Pfade
-- Komplexe Pfade an Legacy delegieren|`handle_telegram_update` hat 5 Early-Returns: `channel_post`/`edited_channel_post`, `edited_message`, `callback_query`, Photo-`message`, Gruppen-`chat.type ∈ {group, supergroup}` → alle `await _legacy_process_update(...)`|nur DM-Text laeuft durch Pipeline
-- Legacy bleibt|`_legacy_process_update` ist KEIN Dead-Code|HitL-Callbacks, Vision, Gruppenbeitritt-HitL, autonomer Einwurf bleiben Telegram-spezifisch
-- Default: AUS|Chris testet manuell durch config-Switch|nach Live-Verifikation kann Default in spaeterem Patch auf `true` gedreht werden
-- Kein Nala-Cutover|nur Telegram|Nala-SSE-Pipeline ist zu anders (RAG/Memory/Sentiment/Streaming)
-- Caller-Pfad: Webhook-Endpoint + Long-Polling-Loop rufen weiterhin `process_update` (nicht `handle_telegram_update` direkt)|process_update ist die Stable-API, handle_telegram_update ist Implementierungs-Detail
+Primaerer Auftrag erledigt UND < 300k Token verbraucht → weiterarbeiten, nicht abschliessen. Auffuell-Reihenfolge: (1) FEATURE_REQUEST Restpunkte (2) MARATHON_WORKFLOW offene Items (3) BACKLOG (4) Test-Schulden (5) Doku-Hygiene. Stopp bei ~350k (50k Reserve fuer Doku). Zwischen-Patches: eigener Commit, ABER kein separater HANDOVER — ein HANDOVER am Session-Ende fuer alle. AUSNAHME: destruktive/riskante Patches NIE als Auffueller. Anti-Pattern: „Patch fertig bei 120k → Doku → STOPP" = 80% Overhead.
 
 ## Coda-Autonomie (P176)
-- Coda übernimmt ALLES was er kann|`docker pull`, `pip install`, `curl`, Testdaten, Sync|Chris nur für physisch Unmögliches
-- Vor Patch-Abschluss prüft Coda|Server startet sauber? Alle Images da? Dependencies aktuell?|Nicht hoffen — verifizieren
-- Neue Dependencies|Coda installiert sie selbst (`pip install` im venv|nicht `--break-system-packages` global)|Nicht als „TODO für Chris" markieren
-- Docker-Images|Coda pullt sie selbst (`docker pull`)|Kein „bitte docker pull ausführen" in der Checkliste
-- Umgebungs-Checks|Coda führt healthchecks aus und fixt Probleme|Erst wenn unfixbar (Auth/Hardware/UX-Gefühl) → an Chris eskalieren
-- Test-Marker (P176)|`@pytest.mark.e2e` für Server-abhängige Tests (Loki/Fenrir/Vidar)|Default-Run via `addopts = -m "not e2e"` (in [`pytest.ini`](pytest.ini))|`pytest -m e2e` nur mit laufendem Server
 
-## Log-Level-Faustregel (P166)
-- DEBUG: Routine-Heartbeats (Pacemaker-Puls|Watchdog-Healthcheck-OK|Long-Poll-Timeouts)|erwartbare transiente Fehler (DNS-Aussetzer, Long-Poll-Exception)|volle Audio-Transkripte (für Debugging)
-- INFO: Start/Stop/Zustandsänderungen (Watchdog aktiv|Pacemaker gestartet|Container-Restart erfolgreich|Audio-Transkript-Einzeiler mit Längen)
-- WARNING: jemand sollte das sehen + ggf. handeln (Whisper unresponsive|Pacemaker-Erstpuls fehlgeschlagen|≥5 aufeinanderfolgende Poll-Fehler)
-- ERROR: Action Required (Container-Restart fehlgeschlagen|Whisper nach Restart nicht erreichbar)
-- Faustregel-Test: „Wenn das jeden Patch im Terminal auftaucht und niemand was unternimmt — falsches Level"
+Coda uebernimmt ALLES was er kann: `docker pull`, `pip install`, `curl`, Testdaten, Sync. Chris nur fuer physisch Unmoegliches. Vor Patch-Abschluss: Server startet sauber? Images da? Dependencies aktuell? Nicht hoffen — verifizieren. Neue Dependencies: `pip install` im venv (nicht `--break-system-packages` global). Docker-Images: `docker pull`. Healthchecks ausfuehren, Probleme fixen. Erst wenn unfixbar (Auth/Hardware/UX) → an Chris eskalieren.
 
-## Repo-Sync (P166)
-- Nach jedem Patch|`sync_repos.ps1` DANN [`scripts/verify_sync.ps1`](scripts/verify_sync.ps1)|beide Pflicht
-- `verify_sync.ps1` prüft|`git status` clean + `git log origin/main..HEAD` leer|für alle 3 Repos (Zerberus|Ratatoskr|Claude)
-- Bei ❌ Exit-Code 1|NICHT weitermachen|Sync-Problem erst lösen (Auth|Branch-Mismatch|Remote-Ref)
-- Patch-Workflow Pflichtschritte (P164→P166):
-  1. Code-Änderungen
-  2. Tests grün (`pytest zerberus/tests/ -v --tb=short`)
-  3. `git add` + `git commit` + `git push` (Zerberus)
-  4. `sync_repos.ps1` (Ratatoskr + Claude-Repo)
-  5. `scripts/verify_sync.ps1` ← Verifikation aller 3 Repos
-  6. Erst bei ✅ Exit 0 → Patch gilt als abgeschlossen
-- Hintergrund: bis P165 driftete Ratatoskr auf GitHub bis zu 65 Patches gegen Zerberus|`sync_repos.ps1` ohne Verifikation = Hoffnung, nicht Beweis
+## Token-Effizienz
 
-## Projektpfad
+- Datei bereits im Kontext → NICHT nochmal lesen | nur lesen wenn (a) nicht sichtbar ODER (b) direkt vor Write
+- Doku-Updates am Patch-Ende | ein Read→Write-Zyklus pro Datei
+- CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md: Bibel-Fibel-Format (Pipes | Stichpunkte | ArtikelWeg)
+- SUPERVISOR/PROJEKTDOKU/README/Patch-Prompts: Prosa (menschliche Leser)
+- Neue Eintraege IMMER im komprimierten Format
+
+## Globale Wissensbasis
+
+- Repo: https://github.com/Bmad82/Claude (PUBLIC | keine Secrets/Keys/IPs/interne URLs)
+- `lessons/` nur bei Bedarf pruefen | nicht rituell bei jedem Patch
+- Nach Abschluss: universelle Erkenntnisse dort eintragen
+
+## Projektpfad & Server
+
 ```
 C:\Users\chris\Python\Zerberus
 ```
-(Umzug aus `C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus` per B-061 am 2026-05-16. Ratatoskr + Claude-Repo bleiben am alten Ort; `sync_repos.ps1` und `scripts/verify_sync.ps1` sind seit B-061 portabel.)
+(Umzug B-061 / 2026-05-16. Ratatoskr + Claude-Repo bleiben am alten Ort; `sync_repos.ps1` + `verify_sync.ps1` sind portabel.)
 
-## Server starten
 ```bash
 cd C:\Users\chris\Python\Zerberus
 venv\Scripts\activate
 uvicorn zerberus.main:app --host 0.0.0.0 --port 5000 --reload
 ```
 
-## Regeln
+Fuer Test-Sweeps: `start_stable.bat` (kein Reload, Pflicht fuer Playwright).
 
-1. Erst lesen, dann schreiben|keine blinden Überschreibungen
-2. `bunker_memory.db` niemals löschen/ändern
+## Regeln (Basics)
+
+1. Erst lesen, dann schreiben | keine blinden Ueberschreibungen
+2. `bunker_memory.db` niemals loeschen/aendern (Detail: [`playbooks/database.md`](playbooks/database.md))
 3. `.env` niemals leaken/loggen
-4. `config.yaml` = Single Source of Truth|`config.json` NICHT als Konfig-Quelle
+4. `config.yaml` = Single Source of Truth | `config.json` NICHT als Konfig-Quelle
 5. Module mit `enabled: false` nicht anfassen
-6. Dateinamen `CLAUDE_ZERBERUS.md`/`SUPERVISOR_ZERBERUS.md` FINAL|nicht umbenennen/verschieben/durch alte Namen ersetzen|gilt auch für Ratatoskr-Kopien
-7. Mobile-first (iOS Safari + Android Chrome)|`:active` statt nur `:hover`|Touch-Target ≥44px|`keydown` statt `keypress`|`type="button"` auf Non-Submit-Buttons
-8. `/v1/`-Endpoints (`/v1/chat/completions`, `/v1/audio/transcriptions`) IMMER auth-frei|Dictate-App kann keine Custom-Headers|Bypass: `_JWT_EXCLUDED_PREFIXES` in [`middleware.py`](zerberus/core/middleware.py)|NIEMALS entfernen (Hotfix 103a)
+6. Dateinamen `CLAUDE_ZERBERUS.md`/`SUPERVISOR_ZERBERUS.md` FINAL | nicht umbenennen | gilt auch fuer Ratatoskr-Kopien
+7. Mobile-first + Touch-Target ≥44px + `keydown` statt `keypress` + `:active` statt nur `:hover` → Detail in [`docs/claude_rules/frontend_mobile.md`](docs/claude_rules/frontend_mobile.md)
+8. `/v1/`-Endpoints auth-frei (Dictate-Pipeline) → Detail in [`playbooks/auth_security.md`](playbooks/auth_security.md)
+9. **User-Entscheidungen als klickbare Box** — Aktionen mit User-Input (Datei loeschen, Index leeren, Settings) → IMMER klickbare Entscheidungsbox in Nala-UI. Buttons + klare Optionen + „Soll ich das fuer dich uebernehmen?". Kein Freitext-Dialog bei binaerer/ternaerer Entscheidung.
 
-### HTTP-Header-Konventionen
+## Playbook-Index
 
-| Header | Verwendung | Seit |
-|---|---|---|
-| `X-Session-ID` | Session für `/v1/chat/completions` + `/nala/voice`|Default `legacy-default`/`nala-default` | Früh |
-| `X-Already-Cleaned: true` | Skip `clean_transcript()` in `/v1/audio/transcriptions`+`/nala/voice`|Dictate-App|Case-insensitive | P135 |
+| Playbook | Wann lesen |
+|---|---|
+| [`testing.md`](playbooks/testing.md) | UI/Auth/Pipeline/RAG/Guard/Endpoint-Patch — Loki/Fenrir/Vidar + Auto-Test-Policy + Integration-Tests |
+| [`rag_pipeline.md`](playbooks/rag_pipeline.md) | `/hel/admin/rag/*` | FAISS-Index | Embeddings | Huginn-Sync |
+| [`auth_security.md`](playbooks/auth_security.md) | `middleware.py` | `/v1/*` | JWT | HTTP-Header | Dictate-App |
+| [`database.md`](playbooks/database.md) | `bunker_memory.db` | Alembic | FAISS-Backup | destruktive DB-Ops |
+| [`observability.md`](playbooks/observability.md) | Logging | Watchdog | Pacemaker | Sync-Tools | Doku-Konsistenz |
 
-### Regel 9 — User-Entscheidungen als klickbare Box
-- Aktionen mit User-Input (Datei löschen, Index leeren, Settings) → IMMER klickbare Entscheidungsbox in Nala-UI
-- Format: Buttons + Klare Optionen + "Soll ich das für dich übernehmen?"
-- Kein Freitext-Dialog bei binärer/ternärer Entscheidung
+## Weiterfuehrende Doku
 
-## RAG-Upload
-- Endpoint: `POST /hel/admin/rag/upload` (`.txt`/`.md`/`.docx`/`.pdf`)
-- Chunks: `chunk_size=800 Wörter`|`overlap=160 Wörter` (20%)|Einheit Wörter, NICHT Token
-- Status: `GET /hel/admin/rag/status` → seit P217 mit `de_chunks`+`en_chunks` getrennt
-- Clear: `DELETE /hel/admin/rag/clear` → `faiss.index`+`metadata.json` reset (Dual: leert beide Slots inkl. en.index auf Disk)
-- Reindex: `POST /hel/admin/rag/reindex` → re-embed aller Chunks (transaktional-atomar seit P213-pre-3, sprach-aware seit P217)
-- Document-Delete: `DELETE /hel/admin/rag/document?source=<file>` → seit P217 Soft-Delete in DE+EN + physischer Reindex pro Sprach-Slot (purge der Geister-Vektoren)
-- Helper: `_reset_sync(settings)` + `_rebuild_index_atomic(chunks, settings, language=...)` in `zerberus/modules/rag/router.py`
+- Projektspezifische Lessons: `lessons_ZERBERUS.md` (Pipe-only) + `lessons_ZERBERUS_KONTEXT.md` (Prosa)
+- Globale Lessons: https://github.com/Bmad82/Claude/tree/main/lessons
+- Patch-Archiv: `docs/PROJEKTDOKUMENTATION.md` (nicht vollstaendig laden, gezielt grep'en)
+- Supervisor-Patch-Prompts: IMMER als `.md`-Datei vom Supervisor, nie inline Chat-Text
 
-### RAG-Architektur Dual-Embedder (P187+P217)
-- **Zwei FAISS-Indizes pro Sprach-Slot** — DE in `_index` (Pfad `de.index`/`de_meta.json`, Dim 768 mit `cross-en-de-roberta-sentence-transformer`) und EN in `_en_index` (Pfad `en.index`/`en_meta.json`, Dim 1024 mit `multilingual-e5-large`)
-- **Add-Pfad routet pro Vektor**: `_add_to_index(vec, text, meta, settings, language=...)` waehlt den Slot nach `language` (oder per `_detect_lang(text)` wenn `None`)|EN-Vektoren landen NIE im DE-Slot, DE-Vektoren NIE im EN-Slot|Dim-Mismatch innerhalb eines Slots → nur DIESER Slot wird neu aufgebaut, der andere bleibt unangetastet (P217 fixt den Pre-P217-Bug "EN-Vec mit 1024 Dim zerstoert DE-Slot mit 768 Dim")
-- **3 Filter-Stellen fuer Soft-Delete** (Patch 116) MUESSEN konsistent sein: `_search_index()` (Retrieval) + `/admin/rag/status` (Listing inkl. `_en_metadata` seit P217) + `/admin/rag/reindex` (Rebuild)|Grep `m.get("deleted") is True` in allen 3 Pfaden
-- **Soft-Delete ist O(1), physisches Loeschen via Reindex** — DELETE-Endpoint markiert `deleted=True` (Pflicht da `IndexFlatL2.remove(idx)` nicht existiert), seit P217 zusaetzlich `_rebuild_index_atomic(verbliebene, settings, language=...)` pro betroffenem Slot|Bei leerer Chunk-Liste wird der Slot leer-reindiziert (Dim erhalten)
-- **`for_write=True` in `_resolve_paths`** (P217) — beim Schreiben wird `language` strikt angewandt, kein None-Fallback (verhindert dass erster EN-Schreibvorgang in `de.index` landet wenn `_en_index` noch `None` ist)
-- **FAISS-BAK-MUSTER bei jedem Reindex-Swap** — vor Persist wird `<file>.pre_reindex_<UTC>.bak` geschrieben (auch sprach-spezifisch seit P217)|GC der `.bak`-Dateien per Wochen-Cron-Job (P213-pre-4)
+## Don'ts (Erinnerung)
 
-## Statischer API-Key
-- `config.yaml` → `auth.static_api_key`|wenn gesetzt akzeptiert JWT-Middleware `X-API-Key` als Bearer-Alternative
-
-## Telegram/Huginn (P155+158+162)
-
-- `config.yaml` → `modules.telegram.mode`:
-  - `polling` (Default): Long-Polling via `getUpdates`|funktioniert hinter Tailscale/NAT|Shutdown cancelt Task
-  - `webhook`: nur mit öffentl. HTTPS-URL|braucht `webhook_url`|Shutdown deregistriert
-- Background-Task in `lifespan` via `startup_huginn()`|`main.py` hält Referenz, cancelt bei Shutdown
-- Update-Handler: `zerberus.modules.telegram.router.process_update(data, settings)`|Webhook+Polling rufen ihn
-- `modules.telegram.system_prompt` (P158): Huginn-Persona (Default zynischer Rabe)|editierbar in Hel→Huginn-Tab|Default: [`DEFAULT_HUGINN_PROMPT`](zerberus/modules/telegram/bot.py)|3-Wege-Resolver `_resolve_huginn_prompt(settings)`: Key fehlt→Default|leer→leer (Opt-Out)|sonst Config
-- BotFather GroupPrivacy=AUS|sonst kein `respond_to_name`/`autonomous_interjection`|Nach Toggle: Bot aus Gruppe entfernen+neu hinzufügen (TG cached pro Beitritt)|→ lessons.md
-- **Update-Typ-Filter (P162):** `process_update()` verwirft ganz oben `channel_post`/`edited_channel_post`/`edited_message`/unbekannte Typen|`_POLL_ALLOWED_UPDATES` in [`bot.py`](zerberus/modules/telegram/bot.py) listet durchgereichte Typen|Bei neuen Typen: erst entscheiden ob Huginn verarbeitet, dann Filter+`_KNOWN_UPDATE_TYPES` ergänzen
-- **Offset-Persistenz (P162):** `data/huginn_offset.json` speichert letzten `update_id`|Boot lädt via `_load_offset()`|gegen Doppelverarbeitung nach Restart|Tests müssen `OFFSET_FILE` per `monkeypatch.setattr(bot_module, "OFFSET_FILE", tmp_path/"off.json")` umlenken
-- **Forum-Topics / `message_thread_id` (P162, D10):** `extract_message_info()` exposed `message_thread_id`+`is_forwarded`|Alle `send_telegram_message`-Calls in `router.py` reichen `message_thread_id=info.get("message_thread_id")` durch|sonst Antwort im General statt Topic|Telegram ignoriert bei None → nur truthy ins Payload
-
-## Intent-Router (P164)
-- Architektur: Intent kommt vom Haupt-LLM via JSON-Header in der Antwort|kein Regex (Whisper-Fehler) + kein extra Classifier-Call (Latenz)
-- Format: `{"intent":"CHAT|CODE|FILE|SEARCH|IMAGE|ADMIN","effort":1-5,"needs_hitl":bool}` als allererste Zeile|optional in ```json-Fence|Body folgt
-- Enum [`core/intent.py`](zerberus/core/intent.py): 6 Kern-Intents aktiv|Rosa-Future (EXECUTE/MEMORY/RAG/SCHEDULE/TRANSLATE/SUMMARIZE/CREATIVE/SYSTEM/MULTI) als Kommentar reserviert|`HuginnIntent.from_str()` Fallback auf CHAT bei None/Empty/Unknown
-- Parser [`core/intent_parser.py`](zerberus/core/intent_parser.py): Brace-Counter (statt naivem `[^}]+`)|robuste Defaults bei kaputtem JSON, fehlendem Header, unbekanntem Intent, effort außerhalb 1-5
-- `INTENT_INSTRUCTION` + `build_huginn_system_prompt(persona)` in [`bot.py`](zerberus/modules/telegram/bot.py)|wird in `_process_text_message` und im autonomen Gruppen-Einwurf an Persona angehängt|Persona darf leer sein, Intent-Block bleibt
-- Router parsing: Body=`parsed.body` (ohne JSON-Header)|Guard sieht Body, User sieht Body|Edge: nur Header ohne Body → Roh-Antwort als Fallback (Log-Warnung)
-- HitL-Policy [`core/hitl_policy.py`](zerberus/core/hitl_policy.py): NEVER_HITL={CHAT,SEARCH,IMAGE} überstimmt LLM-`needs_hitl=true` (K5)|BUTTON_REQUIRED={CODE,FILE,ADMIN} braucht ✅/❌-Inline-Keyboard|ADMIN erzwingt HitL auch bei `needs_hitl=false` (K6 — jailbroken-LLM-Schutz)|aktuell P164: Decision wird geloggt + Admin-DM-Hinweis|echter Button-Flow folgt Phase D
-- K6-Regel: HitL-Bestätigung NIE per natürlicher Sprache („ja, mach kaputt" kein gültiger GO)|nur Inline-Keyboard
-- Effort-Score: nur geloggt (Bucket low/mid/high)|aktive Routing-Entscheidung kommt mit Phase C (Aufwands-Kalibrierung)
-- Gruppen-Einwurf-Filter (D3/D4/O6): autonome Antworten nur bei {CHAT,SEARCH,IMAGE}|CODE/FILE/ADMIN unterdrückt mit `skipped="autonomous_intent_blocked"`
-- Logging-Tags: `[INTENT-164]` (Parsing+Routing), `[EFFORT-164]` (Effort-Logging), `[HITL-POLICY-164]` (Policy-Decisions)
-- Test-Pattern: `parse_llm_response(raw)` direkt testen (16 Parser-Tests)|Policy `.evaluate(parsed)` direkt testen (11 Policy-Tests)|Integration via `_process_text_message`-Mock (Guard, Send, LLM gemockt)|6 Integration-Tests fuer Gruppen-Filter + Header-Strip
-
-## Rate-Limiting + Graceful Degradation (P163)
-- [`core/rate_limiter.py`](zerberus/core/rate_limiter.py): Interface `RateLimiter` (Rosa-Skelett für Redis) + `InMemoryRateLimiter` (Huginn-jetzt)|Singleton via `get_rate_limiter()`|Default 10 msg/min/User|Cooldown 60s
-- Integration in [`process_update()`](zerberus/modules/telegram/router.py) GANZ oben (nach Update-Typ-Filter, vor Event-Bus)|nur für `message`-Updates|Callback-Queries ausgenommen (Admin-HitL-Klicks)
-- `RateLimitResult.first_rejection`-Flag: genau EIN „Sachte, Keule"-Reply pro Cooldown-Periode|Folge-Nachrichten still ignorieren|sonst spammt der Bot selbst|Test-Reset via `_reset_rate_limiter_for_tests()` (Modul-Singleton)
-- `cleanup()` entfernt Buckets nach 5min Inaktivität (Memory-Leak-Schutz)
-- Guard-Fail-Policy `security.guard_fail_policy` ∈ {`allow`,`block`,`degrade`}|Default `allow` (Huginn — Antwort durchlassen + Log-Warnung)|`block` (Rosa — „⚠️ Sicherheitsprüfung nicht verfügbar.")|`degrade` reserviert (Future Ollama)|Helper `_resolve_guard_fail_policy(settings)` via `getattr(settings, "security", None)` (Pydantic `extra="allow"`)
-- Trigger: Guard-Verdict `ERROR` (Guard-Call selbst raised nicht, returnt `{"verdict":"ERROR"}`)|beide Pfade respektieren Policy: `_process_text_message` + autonomer Gruppen-Einwurf
-- OpenRouter-Retry `_call_llm_with_retry()` wrappt `call_llm`|`call_llm` raised NICHT → Error-String prüfen via `_is_retryable_llm_error`|Retryable: `429`/`503`/„rate"|Backoff 2s/4s/8s|max 3 Versuche|400/401/etc. SOFORT zurück (kein Retry-Sinn)
-- Erschöpfung: DM → Fallback „Meine Kristallkugel ist gerade trüb. Versucht's später nochmal. 🔮"|autonom → still überspringen (niemand hat gefragt)
-- Ausgangs-Throttle [`bot.py::send_telegram_message_throttled`](zerberus/modules/telegram/bot.py): 15 msg/min/Chat (konservativ unter TG ~20/min/Gruppe)|wartet via `asyncio.sleep` statt drop|Modul-Singleton `_outgoing_timestamps`|Test-Reset via `_reset_outgoing_throttle_for_tests()`|aktuell nur autonomer Gruppen-Einwurf|DMs bei `send_telegram_message` direkt
-- Config-Keys VORBEREITET nicht aktiv: `limits.per_user_rpm`/`limits.cooldown_seconds` in `config.yaml`|aktives Reading mit Phase-B-Config-Refactor|jetzige Defaults im Code (max_rpm=10, cooldown=60)|`security.guard_fail_policy` IST aktiv gelesen
-- Logging-Tags: `[RATELIMIT-163]` (Rate-Limiter), `[HUGINN-163]` (Router/Bot — Throttle/Retry/Guard-Fail/LLM-Unavailable)
-
-## Input-Sanitizer (P162 + P173)
-- [`input_sanitizer.py`](zerberus/core/input_sanitizer.py): Interface `InputSanitizer` (Rosa-Skelett) + `RegexSanitizer` (Huginn-jetzt)|Singleton via `get_sanitizer()`
-- VOR jedem LLM-Call: in [`_process_text_message()`](zerberus/modules/telegram/router.py) für DMs + autonomer Gruppen-Einwurf|Neue LLM-Pfade: `get_sanitizer().sanitize(text, metadata={...})` davor
-- Findings geloggt, NICHT geblockt (Tag `[SANITIZE-162]`)|Huginn-Modus: `blocked=False`|Guard (Mistral Small) entscheidet final|`blocked=True`-Pfad im Konsumenten („🚫 Nachricht blockiert.")|aktiv mit Rosa wenn `security.input_sanitizer.mode = "ml"`
-- Patterns konservativ|Lieber ein Pattern weniger als False-Positive auf Deutsch („Kannst du das ignorieren?" darf NICHT triggern)|Neue Patterns: erst gegen [`test_guard_stress.py::TestKeineFalsePositives`](zerberus/tests/test_guard_stress.py) (11 FP-Boundary-Cases nach P173) und [`test_input_sanitizer.py`](zerberus/tests/test_input_sanitizer.py) verifizieren
-- Metadata: `user_id`/`chat_type`/`is_forwarded`/`is_reply`|`is_forwarded=True` → Finding `FORWARDED_MESSAGE` (K3-Vektor: Chat-Übernahme via Reply-Chain)|Future: ML-Sanitizer kann je Chat-Typ/Reply unterschiedlich strikt sein
-- **P173-Erweiterungen** (Detection-Rate 5/16 → 12/16): NFKC-Unicode-Normalisierung im Hauptpfad (Ⅰ → I, Homoglyph-Schutz) + Finding `UNICODE_NORMALIZED: NFKC` falls Text geändert|7 neue Patterns: DAN-DE (`(?-i:DAN)` case-sensitive für FP-Schutz vs. Vorname „Dan")|`developer/debug/god/admin mode` mit Aktivierungs-Verb-Kontext|ChatML-/Llama-Tokens (`<|im_start|>`, `[INST]` etc.)|`vergiss alles`|`javascript:` in Markdown-Link|`gib/nenne/verrate/sag deinen System-Prompt`
-
-## Callback-Spoofing-Schutz (P162, O3)
-- `HitlRequest.requester_user_id: Optional[int]`|`process_update()` validiert bei `callback_query`: clicker_id ∈ `{admin_chat_id, requester_user_id}`|sonst Popup („🚫 Nicht deine Anfrage.") via [`answer_callback_query()`](zerberus/modules/telegram/bot.py) mit `show_alert=True`
-- Neue HitL-Pfade (Code-Exec, File-Ops): `requester_user_id=info.get("user_id")` an `create_request()`|sonst nur-Admin-Fallback (DM-only ok, In-Group-Buttons offen)
-- String-Vergleich: TG liefert `from.id` als int|`admin_chat_id` oft String|`str(...)` auf beiden Seiten
-
-## Self-Knowledge-RAG + Bug-Sweep (P169)
-- Self-Knowledge-RAG-Doku [`docs/RAG Testdokumente/huginn_kennt_zerberus.md`](docs/RAG%20Testdokumente/huginn_kennt_zerberus.md)|natuerliche Sprache, kein Code-Block, keine Pfade|explizite Negationen fuer Kerberos-Protokoll/FIDO/Red-Hat-OpenShift|kategoriiert als `reference` (300/60/50)|Chris laedt manuell ueber Hel hoch, kein Auto-Import
-- B1 Bubble-Farben (zwei Layer): Backend `nala.py::login` filtert schwarze `theme_color` aus Profilen → `#ec407a` Default + `[SETTINGS-169]` DEBUG|Frontend Boot-IIFE: `_cleanFav(v)` filtert FAV_BLACK (`#000000`/`#000`/`rgb(0,0,0)`/`rgba(0,0,0,1)`) im Favoriten-Loader BEVOR CSS-Var gesetzt wird|korrupten Favoriten persistent reparieren via `delete fav.bubble.userBg/llmBg` + `localStorage.setItem`
-- B2 RAG-Status Lazy-Init: `GET /admin/rag/status` und `GET /admin/rag/documents` rufen `await _ensure_init(settings)` BEVOR `_index`/`_metadata` gelesen werden|sonst zeigt Hel „0 Dokumente" bis erstem Schreibvorgang|skip wenn `modules.rag.enabled=false`|Logging `[RAG-169] Index-Status: N Chunks, M aktive, K Quellen`
-- B6 Cleaner-Null-Guards: `renderCleanerList()` mit `if (!host) return;` + `loadCleaner()` mit `if (!document.getElementById('cleanerList')) return;` als Frueh-Return + Catch-Block schreibt nur wenn `cleanerStatus` existiert|Hintergrund: P149 entfernte cleanerList-DOM, JS-Funktion blieb im Page-Boot
-- Test-Isolation: `sys.modules["..."] = X` nie direkt — IMMER `monkeypatch.setitem(sys.modules, "...", X)`|sonst bleibt der Eintrag nach Test gesetzt und faengt nachfolgende Tests mit `cannot import name '...' from '<unknown module name>'`
-- Logging-Tags: `[SETTINGS-169]` (Backend-Default-Defensive in nala.py)|`[RAG-169]` (Lazy-Init + Tab-Load-Status-Log in hel.py)
-- Test-Pattern: Frontend-Bugfixes via Source-String-Match testen (Patch-Marker + Symbol-Names)|Backend-Bugfixes via `monkeypatch.setattr(rag_mod, "_ensure_init", fake)` + Modul-Globals direkt befuellen lassen
-
-## Datei-Output + Effort-Kalibrierung (P168)
-- Output-Router in [`_process_text_message`](zerberus/modules/telegram/router.py) nach Guard|`should_send_as_file(intent, len)` aus [`utils/file_output.py`](zerberus/utils/file_output.py): FILE/CODE → immer Datei|CHAT >2000 ZS → Datei-Fallback|sonst Text
-- `determine_file_format(intent, content) -> (filename, mime)`: CODE+Python (`def`/`import`/`class`) → `huginn_code.py`|CODE+JS (`function`/`const`/`=>`/`console.log`) → `.js`|CODE+SQL (`SELECT`/`CREATE TABLE`) → `.sql`|CODE-default → `.txt`|FILE+Markdown (`#`/Listen/Fences) → `huginn_antwort.md`|FILE-plain → `.txt`|CHAT-fallback → `.md`|kein AST-Parsing, nur Regex-Heuristik
-- MIME-Whitelist `.txt/.md/.py/.js/.ts/.sql/.json/.yaml/.yml/.csv`|Blocklist `.exe/.sh/.bat/.cmd/.ps1/.dll/.so/.dylib/.scr/.com/.vbs/.jar/.msi`|`is_extension_allowed(filename)` Belt-and-suspenders gegen Bug in `determine_file_format`
-- 10-MB-Limit (`MAX_FILE_SIZE_BYTES`)|über Limit → User-Fehlermeldung „⚠️ Antwort waere zu gross (X.X MB)"|kein silent drop
-- `send_document(bot_token, chat_id, content, filename, caption, reply_to, thread_id, mime_type, timeout=30s)` in [`telegram/bot.py`](zerberus/modules/telegram/bot.py)|httpx-multipart/form-data|Markdown-Caption mit Fallback ohne `parse_mode` bei HTTP-Fehler|Logging-Tag `[HUGINN-168]`
-- `build_file_caption(intent, content, filename)` ≤1024 ZS (Telegram-Limit)|CODE: ``"📄 `huginn_code.py` — N Zeilen Python"``|FILE: „📄 Hier ist dein Dokument: ..."|CHAT-Fallback: „Die Antwort war zu lang ..."|Zeilenanzahl via `len(content.splitlines())`
-- `EFFORT_CALIBRATION` universal in [`bot.py`](zerberus/modules/telegram/bot.py)|wird in `build_huginn_system_prompt(persona, effort=None)` an Persona angehängt|LLM moduliert Ton selbst basierend auf eigenem `effort`-Score (P164)|effort 1-2 → kommentarlos|3 → kurz neutral|4 → leicht genervt|5 → sarkastisch + „bist du sicher?"
-- `build_effort_modifier(effort)` Helfer für Tests + zukünftige zweistufige Flows|None/invalid → ``""``
-- WICHTIG (O5): Effort-Modifier NUR Persona-Block, NICHT Policy-Block|Guard läuft unabhängig vom Effort-Score
-- FILE+effort=5 → HitL-Gate: `_send_as_file` spawnt `_deferred_file_send_after_hitl` als `asyncio.create_task` (NICHT direkt awaiten — sonst Long-Polling-Deadlock auf Click-Update)|Frage „🪶 Achtung, Riesenakt. ✅/❌"|nutzt P167 `build_admin_keyboard(task.id)`|Intent in DB: `FILE_EFFORT5`|Approve → send_document|Reject → „Krraa! Auch gut."|Expired → P167-Sweep schickt Timeout
-- Guard-Sequenz unverändert: läuft auf gepartem Body (ohne JSON-Header) BEVOR Output-Router entscheidet|Datei-Inhalt = Guard-Inhalt
-- Logging-Tags: `[FILE-168]` (Routing/Validation/HitL-Decision)|`[HUGINN-168]` (sendDocument-API)
-- Test-Pattern: `httpx.AsyncClient`-Mock für sendDocument|`monkeypatch.setattr(router_mod, "send_document", ...)` + `_reset_telegram_singletons_for_tests()` für Pipeline-Tests
-
-## Guard-Stresstests + Policy-Schichten (P172, Phase D)
-- 31-Case-Testbatterie [`test_guard_stress.py`](zerberus/tests/test_guard_stress.py): T01–T16 offline gegen [`core/input_sanitizer.py`](zerberus/core/input_sanitizer.py)|T17–T25 live gegen `mistralai/mistral-small-24b-instruct-2501` mit `@pytest.mark.guard_live` + skipif kein `OPENROUTER_API_KEY`|Marker in [`conftest.py::pytest_configure`](zerberus/tests/conftest.py) registriert
-- Detection-Bilanz P162-Sanitizer NACH P173: 12/16 (T01–T05, T09, T10–T15)|4 verbleibende xfails (T06/T07/T08/T16 — Sanitizer-Out-of-Scope, semantisch, gehören in den LLM-Guard)
-- Bekannte Sanitizer-Lücken (xfail-dokumentiert): Leet-Speak/Punkt-Obfuskation/Wort-Rotation/Persona-Bypass — KEINE Regex-Lösung sinnvoll (entweder umgehbar oder FP auf normalem Deutsch)
-- Empfehlung 5-Schichten-Architektur (Schicht 1+2 deterministisch+blocking|Schicht 3 Sandbox|LLM-Call|Schicht 4 LLM-Guard fail-open|Schicht 5 Audit-Trail)|Determinismus dominiert Semantik (kein Bypass durch „Guard sagt OK")|Sandbox-Schicht ist die einzige kernel-erzwungene
-- Guard-Eskalations-Empfehlung (NICHT implementiert — Phase E): WARNUNG→BLOCK bei Jailbreak-Pattern/Persona-Exploitation/Prompt-Leak-Versuch/destruktiven Code-Patterns|3-WARNUNG-in-10min-Counter|Pre-Truncation Guard-Input auf 4000 Wörter|Admin-Notify-Format definiert|`guard_fail_policy: allow` Default beibehalten (Verfügbarkeit > Sicherheit)
-- Architektur-Dokumente: [`docs/guard_escalation_analysis.md`](docs/guard_escalation_analysis.md) (10-Zeilen-Tabelle Szenario × Aktuell × Empfehlung × Begründung + YAML-Config-Vorschlag)|[`docs/guard_policy_limits.md`](docs/guard_policy_limits.md) (deterministisch vs. LLM-Guard vs. Grauzone, Schichten-Diagramm, Phase-E-Empfehlung)
-- Live-Test-Erkenntnisse: Mistral-Guard erkennt erfundene Telefonnummern NICHT (T24, OK-Verdict trotz halluzinierter Bürgeramt-Nr)|Persona-Test besteht weil Hauptmodell-Antwort die Persona hält, NICHT weil Guard sie als Bypass-Versuch flaggt (T22)|Latenz wächst linear mit Input-Länge (T25, daher Pre-Truncation-Empfehlung)|Indeterminismus: T17/T18/T23 akzeptieren auch ERROR (transiente Mistral-Glitches)
-- Logging-Tag im Test: KEIN neuer — wir reuse `[GUARD-120]` und `[SANITIZE-162]`. P172 hat keinen Runtime-Tag (nur Tests + Docs).
-
-## Message-Bus-Interfaces (P173, Phase E)
-- [`core/message_bus.py`](zerberus/core/message_bus.py) — transport-agnostische Datenmodelle: `Channel(TELEGRAM/NALA/ROSA_INTERNAL)`|`TrustLevel(PUBLIC/AUTHENTICATED/ADMIN)`|`Attachment(data, filename, mime_type, size)`|`IncomingMessage(text, user_id, channel, trust_level=PUBLIC, attachments=[], metadata={})`|`OutgoingMessage(text, file, file_name, mime_type, reply_to, keyboard, metadata)`
-- [`core/transport.py`](zerberus/core/transport.py) — `TransportAdapter(ABC)` mit `async send(OutgoingMessage) -> bool`|`translate_incoming(raw_data: dict) -> IncomingMessage`|`translate_outgoing(OutgoingMessage) -> dict`
-- IncomingMessage-`metadata` enthält je nach Transport: `thread_id`, `reply_to_message_id`, `is_forwarded`, `chat_id`, `message_id`|`is_forwarded` bleibt das Signal für den Sanitizer (P162-K3)|`trust_level=ADMIN` ersetzt langfristig die Direkt-Vergleiche gegen `admin_chat_id`
-- Tests in [`test_message_bus.py`](zerberus/tests/test_message_bus.py): Enum-Werte|Default-Factories unabhängig (Regression-Schutz gegen shared mutable state für `attachments`/`metadata`)|ABC-Instanziierungs-Schutz|Subclass-Roundtrip
-- Migrations-Reihenfolge: P174 Telegram-Adapter + Pipeline-Skelett (parallel verfügbar)|P175 Cutover `process_update` → `handle_telegram_update` + Migration komplexer Pfade (Group, Callbacks, Vision, HitL-BG)|danach Nala-Adapter, dann Rosa-Internal
-- Wenn ein neuer Transport benötigt wird: TransportAdapter-Subclass anlegen, alle 3 Methoden implementieren, NICHT die Datenmodelle selbst erweitern (Felder + `metadata`-Dict reichen)
-
-## Phase-E-Skelett komplett (P175)
-- Alle Adapter-Klassen + alle Skelett-Dateien sind angelegt|`zerberus/adapters/{telegram,nala,rosa}_adapter.py` + `zerberus/core/{message_bus,transport,pipeline,policy_engine}.py` + [`docs/trust_boundary_diagram.md`](docs/trust_boundary_diagram.md)
-- **Phase F übernimmt:** Cutover `process_update` → `handle_telegram_update`|schrittweise Migration der Nala-Pipeline (Guard/Intent über `core/pipeline`, RAG/Memory/SSE bleibt Nala-spezifisch)|RosaAdapter-Implementierung wenn Messenger-Stack steht|Audit-Trail (`PolicyDecision.severity ∈ {high, critical}` → `audit.log`)
-- Wichtig: Pipeline-/Adapter-Cutover sind in Phase E BEWUSST nicht passiert wegen ~15 Tests die `_process_text_message`/`process_update`/`send_telegram_message` als Modul-Attribute monkey-patchen|Trennung: Phase E = Skelett, Phase F = Migration
-
-## Nala-Adapter (P175, Phase E)
-- [`adapters/nala_adapter.py`](zerberus/adapters/nala_adapter.py) — `NalaAdapter(TransportAdapter)`. Trust-Mapping aus dem JWT-Payload: `permission_level=admin` → `ADMIN`, gueltiger `profile_name` → `AUTHENTICATED`, sonst `PUBLIC`|Audio-Bytes werden direkt als `Attachment` gepackt (Gegensatz zu Telegram, wo Photo-Bytes lazy bleiben)|Erwartetes `raw_data`-Format: `{text, profile_name, permission_level, session_id, audio?, metadata?}` — das was Nala-Endpoints aus `request.state` (post-JWT-Middleware) ohnehin schon zusammenbauen
-- `translate_outgoing` liefert `{kind: text|file, text, file, file_name, mime_type, reply_to, metadata}` — der Caller (legacy.py / nala.py) übersetzt das in `ChatCompletionResponse` oder SSE-Event|`send` raised `NotImplementedError` mit Hinweis auf SSE/EventBus — Nala antwortet nicht über Push
-- Wichtig: Adapter ist OVERLAY, kein Ersatz für `legacy.py`/`nala.py`|SSE-Streaming, RAG, Memory, Sentiment, Audio-Pipeline, Query-Expansion bleiben unverändert|wer den Adapter nutzt: in einem Nala-Endpoint `NalaAdapter().translate_incoming({"text": ..., "profile_name": request.state.profile_name, ...})` → `IncomingMessage` an Pipeline (P174) → `OutgoingMessage` mit `translate_outgoing` zurück in eine Nala-Response
-
-## Runtime-Info-Block (P185)
-- Utility: [`zerberus/utils/runtime_info.py`](zerberus/utils/runtime_info.py) — `build_runtime_info(settings) -> str` baut den Block, `append_runtime_info(prompt, settings) -> str` haengt ihn an.
-- Inhalt: Zerberus-Version, Cloud-LLM (Kurzname), Guard-Modell (Kurzname), RAG/Sandbox-Aktivierungs-Status. Marker-Header: `[Aktuelle System-Informationen — automatisch generiert]`.
-- Robust: Pydantic-Settings, Dict-Settings, `SimpleNamespace`, sogar `None` werden akzeptiert — Lesefehler liefern `unbekannt` statt zu crashen.
-- Injection-Punkte:
-  - **Huginn:** [`telegram/router.py`](zerberus/modules/telegram/router.py) `_process_text_message` — Reihenfolge `_resolve_huginn_prompt` → `append_runtime_info` → `_inject_rag_context` → `build_huginn_system_prompt`.
-  - **Nala:** [`legacy.py`](zerberus/app/routers/legacy.py) `chat_completions` — Reihenfolge `load_system_prompt` → `_wrap_persona` (P184) → `append_runtime_info` → `append_decision_box_hint` → insert.
-- Statisch in RAG-Doku ([`huginn_kennt_zerberus.md`](docs/RAG%20Testdokumente/huginn_kennt_zerberus.md)): Architektur, Naming, Komponenten, Halluzinations-Negationen, Phasen-Geschichte. **Dynamisch (Live-Block):** Modellname, Guard-Modell, Modul-Status. RAG-Doku enthält einen Absatz "Aktuelle Konfiguration" der auf den Live-Block zeigt.
-- Source-Audit-Test in [`test_patch185_runtime_info.py`](zerberus/tests/test_patch185_runtime_info.py) verifiziert Reihenfolge der Calls in beiden Routern — verhindert Drift wenn künftige Patches zwischen die Stufen rutschen.
-
-## Nala Prompt-Assembly (P184 + P197)
-- **Quellen-Hierarchie** (von Persona-Stärkste zu Schwächste):
-  1. `system_prompt_{profil}.json` (z.B. `system_prompt_chris.json`) — vom User in Settings → Tab Ausdruck → "Mein Ton" via `POST /nala/profile/my_prompt` geschrieben. Atomares Write via tempfile + os.replace. Nur eigenes Profil zugreifbar (JWT-Check).
-  2. `system_prompt.json` — Default Nala-Stil (warmer KI-Assistent), Fallback wenn profil-spezifisch fehlt.
-  3. Empty (kein system-Prompt) — wenn keine Datei existiert.
-- **Resolver:** [`load_system_prompt(profile_name)` in `legacy.py`](zerberus/app/routers/legacy.py)|Reihenfolge: profil-spezifisch (lower-case) → generic|Liest immer fresh von Disk, kein Cache.
-- **Wrapping (P184):** `_wrap_persona()` legt einen `# AKTIVE PERSONA — VERBINDLICH`-Header vor profil-spezifische Prompts|Trigger: `_is_profile_specific_prompt(profile_name)` checkt Datei-Existenz|Generischer Default wird NICHT gewrappt (er IST der Default).
-- **Projekt-Overlay-Merge (P197):** [`zerberus/core/persona_merge.py`](zerberus/core/persona_merge.py) — `merge_persona(base, overlay, project_slug=None)` hängt einen markierten Block `[PROJEKT-KONTEXT — verbindlich für diese Session]` mit `system_addendum` und `tone_hints` aus `projects.persona_overlay` an den Base-Prompt|Aktivierung über Header `X-Active-Project-Id: <int>` (`read_active_project_id` mit Lowercase-Fallback)|DB-Lookup über `resolve_project_overlay(project_id, *, skip_archived=True)` — archivierte Projekte werden übersprungen, Slug wird trotzdem geloggt|Reihenfolge in `chat_completions`: `load_system_prompt` → **`merge_persona`** → `_wrap_persona` (so umschließt der AKTIVE-PERSONA-Marker auch das Projekt-Overlay) → `append_runtime_info` → `append_decision_box_hint`|`tone_hints` werden case-insensitive dedupliziert, leere Strings/Nicht-Strings gefiltert|Doppel-Injection-Schutz via Marker-Substring-Check.
-- **Reihenfolge im messages-Array:** `[system: AKTIVE-PERSONA-Wrapped (Persona + optionaler Projekt-Block) + decision-box-hint + allgemeinwissen-fallback, user: enriched_with_RAG]`|Persona steht IMMER vorne, RAG-Kontext wird in den USER-Turn injiziert (nicht in system).
-- **Konflikt-Resolution:** Wenn Caller bereits eine `role=system` mitschickt (interne Pipeline-Aufrufe), wird die Persona NICHT eingefügt — Caller-Wahl gewinnt|Standard-Frontend-Calls schicken nur `[{role:user}]`, also greift der Persona-Inject immer.
-- **Diagnose:** Persistenter `[PERSONA-184]`-INFO-Log zeigt `profile`/`persona_active`/`sys_prompt_len`/`first200`|`[PERSONA-197]`-INFO-Log zeigt `project_id`/`slug`/`base_len`/`project_block_len` (nur wenn Header gesetzt)|Bei Persona-Bug-Reports: erst Server-Log nach beiden Tags greppen, dann entscheiden ob Verdrahtung oder LLM-Verhalten.
-- **Bekanntes Verhalten:** DeepSeek v3.2 ignorierte abstrakte System-Prompts bei kurzen User-Inputs ("wie geht's?")|`# AKTIVE PERSONA — VERBINDLICH`-Marker erzwingt höhere Aufmerksamkeit|Bei weiterhin generischen Antworten: ChatML-Wrapper (B-071) als nächste Eskalations-Stufe.
-- **Telegram bewusst ausgeklammert (P197):** Huginn ([`telegram/bot.py`](zerberus/modules/telegram/bot.py)) hat eigene Persona-Welt (DEFAULT_HUGINN_PROMPT, optional Hel-überschrieben) ohne User-Profile und ohne Verbindung zu Nala-Projekten|Project-Awareness in Telegram braucht eigene UX (`/project <slug>`-Befehl oder persistente Bind-Tabelle)|kein Patch dafür geplant bis konkreter Bedarf.
-
-## Policy-Engine (P175, Phase E)
-- [`core/policy_engine.py`](zerberus/core/policy_engine.py) — abstraktes `PolicyEngine`-Interface + pragmatische `HuginnPolicy`-Fassade|`evaluate(message, parsed_intent=None) -> PolicyDecision`|`PolicyDecision{verdict, reason, requires_hitl, severity, sanitizer_findings, retry_after}`|`PolicyVerdict ∈ {ALLOW, DENY, ESCALATE}`
-- HuginnPolicy aggregiert: 1) Rate-Limit (P163, billigster Check zuerst — bei DENY wird Sanitizer NICHT aufgerufen), 2) Sanitizer (P162/P173, `blocked=True` → DENY, Findings ohne `blocked` werden nur durchgereicht — kein Eskalations-Trigger, sonst rotten WARNUNG-Patterns), 3) HitL-Check (P164, NUR wenn `parsed_intent` mitgegeben — sonst skip, sonst würde Pre-Pass ohne Intent evaluieren)
-- Severity-Mapping per Trust-Level (defense-in-depth, NICHT trust-blind): `PUBLIC` hebt eine Stufe (max bis `high` — `critical` ist Audit-Reserved), `AUTHENTICATED` Basis, `ADMIN` senkt eine Stufe (mind. `low`)|Trust-blinde Checks bleiben (auch ein Admin soll keinen Loop 1000x/sek durchjagen)
-- Pipeline-Integration optional: `PipelineDeps` kann eine `PolicyEngine` aufnehmen (in P175 noch nicht verkabelt — kommt mit Phase F)|Tests in [`test_policy_engine.py`](zerberus/tests/test_policy_engine.py): ABC-Schutz, ALLOW/DENY/ESCALATE × Severity-Mapping × Reihenfolge
-
-## Rosa-Adapter Stub + Trust-Boundary-Diagramm (P175, Phase E)
-- [`adapters/rosa_adapter.py`](zerberus/adapters/rosa_adapter.py) — Stub-Klasse, alle 3 Methoden raisen `NotImplementedError` mit Hinweis auf [`docs/trust_boundary_diagram.md`](docs/trust_boundary_diagram.md)|wichtig: instanziierbar (alle abstrakten `TransportAdapter`-Methoden überschrieben), damit der Vertrag formal eingehalten ist und `__init__`-Tests trivial bleiben
-- [`docs/trust_boundary_diagram.md`](docs/trust_boundary_diagram.md) — ASCII-Architektur-Diagramm aller Schichten (Adapter → Policy-Engine → Pipeline → Guard → Sandbox) + Trust-Stufen-Tabelle + Severity-Mapping + Daten-Flüsse (EXTERNAL/NEVER LEAVES/INTRA-SERVER) + Patch-Mapping welcher Patch hat welche Schicht gebaut
-
-## Telegram-Adapter + Pipeline (P174, Phase E)
-- [`adapters/telegram_adapter.py`](zerberus/adapters/telegram_adapter.py) — `TelegramAdapter(TransportAdapter)`. Trust-Mapping: `private+admin_chat_id` → `ADMIN`, `private` → `AUTHENTICATED`, `group/supergroup` → `PUBLIC` (Admin-in-Gruppe bleibt PUBLIC, konservativ). `translate_incoming` nutzt `extract_message_info` aus `bot.py` (kein eigener Parser)|`translate_outgoing` baut kwargs-Dict mit `method`-Discriminator (`sendMessage`/`sendDocument`)|`send` delegiert an die bestehenden `send_telegram_message`/`send_document`. Photo-Bytes werden NICHT vorgeladen — nur `photo_file_ids` in metadata, das Resolven via `get_file_url` bleibt legacy bis P175. Convenience-Factory `TelegramAdapter.from_settings(settings)`. Logging-Tag `[ADAPTER-174]`.
-- [`core/pipeline.py`](zerberus/core/pipeline.py) — `process_message(IncomingMessage, PipelineDeps) -> PipelineResult`. Linearer Text-Pfad: Sanitize → LLM → Intent-Parse → Guard → Output-Routing (Text vs. File). DI-only, keine Telegram-/HTTP-/OpenRouter-Imports. `PipelineDeps`-Felder: `sanitizer`, `llm_caller`, `guard_caller` (optional), `system_prompt`, `guard_context`, `guard_fail_policy`, `should_send_as_file`, `determine_file_format`, `format_text` + Antwort-Texte (`llm_unavailable_text`/`sanitizer_blocked_text`/`guard_block_text`). `PipelineResult.reason ∈ {ok, sanitizer_blocked, llm_unavailable, guard_block, empty_input, empty_llm}` + `intent`/`effort`/`needs_hitl`/`guard_verdict`/`sanitizer_findings`/`llm_latency_ms` für Diagnostik
-- WICHTIG: Pipeline behandelt KEINE HitL-BG-Tasks, KEIN Group-Routing, KEINE Callbacks, KEINE Vision, KEINE Admin-DM-Spiegelungen. Diese Pfade bleiben in [`telegram/router.py::_process_text_message`](zerberus/modules/telegram/router.py) bis P175. Wer sie braucht: legacy-Pfad nutzen
-- `handle_telegram_update(raw_update, settings)` in [`router.py`](zerberus/modules/telegram/router.py) — neuer Phase-E-Entry-Point der Adapter + Pipeline zusammensteckt. **NICHT von `process_update` aufgerufen** — der legacy-Pfad bleibt der primäre. P175 macht den Cutover. Wer `handle_telegram_update` direkt aufruft kriegt bei Foto-Only-Updates `{ok: True, skipped: "no_text"}`
-- Backward-Compat: `_process_text_message` und `process_update` UNVERÄNDERT|alle bestehenden Monkey-Patch-Punkte (`telegram_router.send_telegram_message`/`call_llm`/`_run_guard`/`_process_text_message`) bleiben funktional|`test_telegram_bot.py`/`test_hitl_hardening.py`/`test_rate_limiter.py` laufen unverändert grün
-- Tests: [`test_pipeline.py`](zerberus/tests/test_pipeline.py) (17 DI-basierte Cases) + [`test_telegram_adapter.py`](zerberus/tests/test_telegram_adapter.py) (24 Cases — translate_incoming/outgoing + send mit gemockten Bot-API-Funktionen)
-- DI-Pattern für neue Adapter: `PipelineDeps` befüllen mit Sanitizer/LLM/Guard/Output-Routing-Callables — der Adapter selbst implementiert nur die 3 `TransportAdapter`-Methoden; die Business-Logik kommt über `process_message`
-
-## Docker-Sandbox (P171, Phase D)
-- Opt-In via `modules.sandbox.enabled: true` ([`SandboxConfig`](zerberus/core/config.py))|Defaults im Pydantic-Model (config.yaml gitignored)|`enabled=False` per Default — `execute()` liefert dann `None`, Caller fällt auf P168-Datei-Pfad zurück
-- [`SandboxManager`](zerberus/modules/sandbox/manager.py) baut `docker run --rm --network none --read-only --tmpfs /tmp:size=64m,exec --memory 256m --cpus 0.5 --pids-limit 64 --security-opt no-new-privileges` mit eindeutigem Container-Namen `zerberus-sandbox-<uuid>`|kein Volume-Mount|Cleanup IMMER (auch bei Crash/Timeout via `docker rm -f`)
-- Code-Blockliste (Belt+Suspenders, **NICHT** primärer Schutz — der ist Docker): Python `import os/subprocess/socket`, `__import__`, `eval`, `exec`, `open(... 'w')`|JS `child_process`/`fs`/`net`/`http(s)`/`eval`/`Function`|Treffer → `error="Blocked pattern: ..."`, kein Execute, User bekommt nur die Datei
-- Output-Limits: `max_output_chars=10000` (Default), Truncation setzt `truncated=True` + `\n…[truncated]`-Suffix|`SandboxResult{stdout, stderr, exit_code, execution_time_ms, truncated, error}`
-- Timeout: Default 30s, bei Überschreitung `exit_code=-1` + `error="Timeout nach Ns"` + force-rm des Containers
-- Code-Extraktion via [`utils/code_extractor.py`](zerberus/utils/code_extractor.py): `extract_code_blocks()` (Fenced ```lang Blöcke aus Markdown) + `first_executable_block(text, allowed_languages, fallback_language)`|Sprach-Aliase `py`→`python`, `js`/`node`/`nodejs`→`javascript`|Whitespace bleibt erhalten (Python-Indent), nur 1 trailing Newline weg
-- Pipeline-Hook in [`telegram/router.py::_send_as_file`](zerberus/modules/telegram/router.py): nach erfolgreichem CODE-File-Versand → `_maybe_execute_in_sandbox()` → Result als Reply via `format_sandbox_result()`|Datei kommt ZUERST raus, Result als Reply auf Datei|`format_sandbox_result(result, filename, language)` baut `▶️ Ausgeführt in Nms` + optional `⚠️ Exit Code N` + stdout/stderr in Code-Fences
-- Startup-Healthcheck in [`main.py`](zerberus/main.py) lifespan: `SandboxManager.healthcheck()` → `{ok, reason, docker, images}`|Boot-Banner `Sandbox: ok|skip|fail (...)`|Sandbox bleibt OPTIONAL — jeder Fehler ist WARNING, niemals fatal
-- Singleton via `get_sandbox_manager()` (lazy, liest aktuelle `Settings`)|`reset_sandbox_manager()` für Tests
-- Logging-Tag: `[SANDBOX-171]` (alle Execute-/Timeout-/Block-Events)
-- Test-Pattern: Mock-basierte Unit-Tests via `unittest.mock.patch` auf `asyncio.create_subprocess_exec`/`asyncio.wait_for` ([`test_sandbox.py`](zerberus/tests/test_sandbox.py))|Live-Tests mit `@pytest.mark.docker` + `skipif(not _DOCKER_AVAILABLE)`|Marker in [`conftest.py::pytest_configure`](zerberus/tests/conftest.py) registriert
-- HitL-Button-Flow für CODE-Intents folgt mit P172+ — aktuell P171 läuft die Sandbox automatisch nach LLM-Response, ohne Admin-Bestätigung. Härtung dafür ist nächster Patch.
-
-## HitL-Hardening (P167)
-- DB-Tabelle `hitl_tasks` ([`core/database.py::HitlTask`](zerberus/core/database.py))|UUID4-Hex-IDs (32 Zeichen)|Status: `pending`/`approved`/`rejected`/`expired`|`Base.metadata.create_all` in `init_db()` legt Tabelle an
-- `HitlManager` ([`modules/telegram/hitl.py`](zerberus/modules/telegram/hitl.py)) async + DB-backed: `create_task` / `get_task` / `resolve_task(decision="approved"\|"rejected", is_admin_override=bool)` / `get_pending_tasks(chat_id=None)` / `expire_stale_tasks()` / `wait_for_decision`|In-Memory-Cache als Fast-Path + `asyncio.Event`-Notifizierung|`persistent=False` für Unit-Tests ohne DB
-- Backward-Compat: Sync-Methoden (`create_request`/`approve`/`reject`/`get`) laufen rein in-memory|`HitlRequest = HitlTask`|alte Feld-Namen (`request_id`/`request_type`/`requester_chat_id`/`requester_user_id`) als `@property` lesbar
-- Ownership-Layer im Router-Callback ([`router.py::process_update`](zerberus/modules/telegram/router.py)): `is_admin = clicker == admin_chat_id`, `is_requester = clicker == task.requester_id`|Klick erlaubt wenn admin OR requester|sonst spoofing-skip + Popup|Admin-Override (admin klickt für fremden requester) mit `is_admin_override=True` an `resolve_task` → `[HITL-167] Admin-Override` INFO-Log
-- Auto-Reject-Sweep `hitl_sweep_loop(manager, interval, on_expired)`|Lifecycle in [`startup_huginn`](zerberus/modules/telegram/router.py) gestartet, in `shutdown_huginn` gecancelt|Default `timeout=300s`/`sweep_interval=30s` aus `HitlConfig` ([`core/config.py`](zerberus/core/config.py))|Defaults im Pydantic-Model (config.yaml gitignored)|abgelaufene Tasks: Telegram „⏰ Anfrage verworfen — zu langsam, Bro."
-- Doppel-Bestätigung: `resolve_task` checkt `status == "pending"` vor Update → liefert `False` bei bereits aufgelöstem Task|Router antwortet „ℹ️ Schon entschieden."
-- P8-Operationalisierung: Router-Callback-Pfad nimmt nur Inline-Button-Callbacks an, NIE Text|„Ja mach mal" ist kein gültiges GO für CODE/FILE/ADMIN
-- Logging-Tags: `[HITL-167]` (alle Manager-/Sweep-Events)|`[HITL-POLICY-164]` bleibt aktiv für Policy-Decisions
-- Test-Pattern: `tmp_db`-Fixture mit eigener SQLite ([`test_hitl_hardening.py`](zerberus/tests/test_hitl_hardening.py))|Stale-Tasks per `update().values(created_at=...)` direkt zurückdatieren|`_reset_telegram_singletons_for_tests()` für Router-Tests|Backward-Compat-Tests in `test_hitl_manager.py` mit `persistent=False`
-
-## Guard-Kontext (P158 / P180)
-- [`check_response()`](zerberus/hallucination_guard.py) akzeptiert optionale `caller_context: str` UND `rag_context: str`|`caller_context` beschreibt den Antwortenden (Persona, System-Zugehörigkeit)|`rag_context` ist das Referenz-Material das dem LLM zur Verfügung stand
-- Im System-Prompt erscheinen beide als getrennte Blöcke: `[Kontext des Antwortenden]` (caller_context, ohne harten Cap) und `[Referenz-Wissen das dem Antwortenden zur Verfügung stand]` (rag_context, **Cap 1500 Zeichen** via `RAG_CONTEXT_MAX_CHARS`)
-- `rag_context` lebt zusätzlich im User-Prompt als Faktenmaterial (Cap 2000, P120) — die zwei Stellen sind absichtlich redundant: System-Prompt = "treat as legitimate", User-Prompt = "Diskussions-Material"
-- Huginn-Calls ([`telegram/router.py`](zerberus/modules/telegram/router.py)): Raben-Persona via `_build_huginn_guard_context(persona)` inkl. **800-Zeichen-Auszug** (P180, vorher 300)|RAG-Lookup-String (`_huginn_rag_lookup`) wird als `rag_context` an `_run_guard` durchgereicht
-- Nala-Calls ([`legacy.py`](zerberus/app/routers/legacy.py)): Zerberus-Selbstreferenz („Referenzen auf Zerberus/Chris/Nala/Hel/Huginn keine Halluzinationen")|`rag_hits` werden formatiert als `rag_context` an `check_response()` gereicht (seit P120)
-- WARNUNG = KEIN Block|Antwort geht IMMER an User|Admin (Chris) bekommt bei WARNUNG DM mit Chat-ID+Grund|BLOCK/TOXIC würden Antwort unterdrücken — gibt's aktuell nicht (nur OK/WARNUNG/SKIP/ERROR)
-- Neue Frontends: eigene `caller_context` + `rag_context` definieren|beide leer = Pre-158-Verhalten
-
-## Telegram-User-Allowlist (P181)
-- **Nur Privat-Chats** — Gruppen sind Tailscale-intern, der Allowlist-Filter springt nur bei `chat_type == "private"`
-- Drei Modi unter `modules.telegram.allowlist_mode`: `open` (Default, alle), `allowlist` (nur User in `allowed_users`), `admin_only` (nur `admin_chat_id`)
-- **Admin ist im allowlist-Mode IMMER erlaubt**, auch wenn nicht in `allowed_users` — Lock-out-Schutz
-- **Leere `allowed_users` im allowlist-Mode = alle erlaubt** (Safety-Fallback). Wer nur Admin will: `admin_only` setzen
-- Position im Pipeline-Flow: VOR Sanitizer/Rate-Limit/RAG/LLM (kosten-/sicherheitskritisch)
-- Absage-Rate-Limit: 1 Absage pro User pro Stunde (`_DENIED_NOTICE_INTERVAL_SECS`) — schützt gegen Voice-Spam → Outbound-Throttle
-- Hel-UI: Huginn-Tab → Sektion „Zugriffskontrolle (Allowlist)" mit Mode-Dropdown + User-IDs-Feld (kommasepariert)
-- Logging-Tag: `[ALLOWLIST-181]`
-
-## ADMIN-Plausibilitäts-Heuristik (P182)
-- `HitlPolicy.evaluate(parsed, user_message="")` nimmt jetzt optional den User-Text an|Wenn Intent=ADMIN aber `user_message` keine Admin-Marker hat (Slash-Prefix oder Keyword aus `_ADMIN_TOKENS`) → Downgrade auf CHAT
-- Schutz vor Smalltalk-False-Positives: „Wie geht's dir?" wird vom LLM manchmal als ADMIN klassifiziert, aber ohne Slash und ohne Admin-Keyword bleibt das CHAT
-- Token-Match via `re.findall(r"[a-zäöüß]+", text)` + Set-Intersection — kein Substring-Match (sonst würde "voraussetzung" auf "stat" hitten)
-- Backward-Compat: Aufrufer ohne `user_message` (Default `""`) bekommen das Pre-182-Verhalten — alle bestehenden HitL-Policy-Tests bleiben grün
-- Logging-Tag: `[HITL-POLICY-182]` für Downgrade-Events
-
-## Unsupported-Media-Handler (P182)
-- Voice/Audio/Video/Video-Note/Document/Sticker → kurze freundliche Absage + kein LLM-Call
-- Photo bleibt UNTERSTÜTZT (Vision-Pfad) — nicht in `_UNSUPPORTED_MEDIA`
-- Position: NACH Allowlist (denied User soll nicht erfahren dass der Bot existiert), VOR Rate-Limit (freundliche Erklärung statt „Sachte, Keule")
-- Logging-Tag: `[HUGINN-182]` für Media-Skips
-- Echte Voice→Whisper-Pipeline ist Backlog-Item B-072
-
-## Settings-Cache (P156)
-- `get_settings()` = Singleton in `core/config.py`|YAML-Write MUSS Cache invalidieren|sonst stale Wert + verzögerte UI-Werte nach Save
-- Decorator: `@invalidates_settings` (sync+async)|Kontextmanager: `with settings_writer():` (granular)
-- Migriert: 7 YAML-Writer in [`hel.py`](zerberus/app/routers/hel.py)+[`nala.py`](zerberus/app/routers/nala.py) (P156-Sweep)
-- Neue YAML-Writer-Endpoints: IMMER `@invalidates_settings`|Test-Pattern: POST→GET im selben Test mit tmp-cwd-Fixture + `_settings = None`-Reset|→ [`test_huginn_config_endpoint.py`](zerberus/tests/test_huginn_config_endpoint.py)
-
-## Datenbank-Migrationen (Alembic, seit P92)
-- Config: `alembic.ini` im Root|Revisionen unter `alembic/versions/`
-- Manueller Aufruf|KEIN Auto-Upgrade beim Serverstart
-- Apply: `alembic upgrade head`|Neue Revision: `alembic revision -m "..."` + manuell upgrade/downgrade editieren
-- IMMER idempotent (`PRAGMA table_info`-Check, `IF NOT EXISTS`)
-- Vor Schema-Änderung: Backup `cp bunker_memory.db bunker_memory_backup_patch{N}.db`
-
-## Tests (seit P93)
-- Playwright in `zerberus/tests/`|Loki=E2E|Fenrir=Chaos|Vidar=Smoke
-- Test-Accounts `loki`/`fenrir`/`vidar` Pflicht in `config.yaml` (P93, P153)
-- Run: `pytest zerberus/tests/ -v --html=zerberus/tests/report/full_report.html --self-contained-html`
-- Server muss laufen (`https://127.0.0.1:5000`)
-
-### Test-Agenten
-| Agent | Datei | Fokus | Passwort |
-|-------|-------|-------|---------|
-| Loki | `test_loki.py`, `test_loki_mega_patch.py` | E2E Happy-Path | `lokitest123` |
-| Fenrir | `test_fenrir.py`, `test_fenrir_mega_patch.py` | Chaos/Edge/Stress | `fenrirtest123` |
-| Vidar | `test_vidar.py` | Smoke (Go/No-Go) | `vidartest123` |
-
-## Weiterführende Doku
-- Projektspezifische Lessons: `lessons_ZERBERUS.md`
-- Globale Lessons: https://github.com/Bmad82/Claude/lessons/
-- Patch-Archiv: `docs/PROJEKTDOKUMENTATION.md`
-
-## ⚠️ Dateinamen-Konvention (Konsolidierung 2026-05-15)
-- Projektspezifisch: `CLAUDE_ZERBERUS.md` (diese Datei)
-- Supervisor: `SUPERVISOR_ZERBERUS.md`
-- Übergabe: `HANDOVER_ZERBERUS.md`
-- Workflow: `MARATHON_WORKFLOW_ZERBERUS.md` (vorher: `ZERBERUS_MARATHON_WORKFLOW.md` — Suffix-Position vereinheitlicht)
-- Lessons: `lessons_ZERBERUS.md`
-- Design: `docs/DESIGN.md` (Sub-Doku in `docs/`, KEIN Suffix — Test-Suite `test_design_system::*` und ein knappes Dutzend andere Module pinnen den Pfad an, Umbenennung wäre invasiv und nicht durch die Konvention gefordert, die auf Root-Doku zielt)
-- Patch-Prompts: IMMER vollen Dateinamen mit Projektsuffix
-- NIEMALS mit globaler CLAUDE.md verwechseln/zusammenführen
-
-## Supervisor-Patch-Prompts
-- Vom Supervisor (claude.ai Chat) als `.md`-Datei|nie inline Chat-Text|Claude Code via Copy-Paste
-
-## Repo-Sync-Pflicht
-- Nach jedem Patch: `git add -A; git commit -m "Patch XX – [Titel]"; git push` (nur Zerberus)
-- Nach jedem Patch: PROJEKTDOKUMENTATION.md anhängen (am Ende, bestehende nicht ändern):
-  - Patch-Nr+Titel|Datum (ISO)|Was geändert (1-3 Sätze)|Dateien neu/geändert|Teststand (X grün)
-- PROJEKTDOKUMENTATION.md-Eintrag = Teil jedes Patches, von Claude Code erledigt|alte „liegt beim Supervisor"-Notizen ungültig
-- **Nach jedem `git push`: `sync_repos.ps1` ausführen** (P164 — Sync ist LETZTER Schritt jedes Patches, Patch gilt erst als abgeschlossen wenn alle 3 Repos synchron)
-- Falls `sync_repos.ps1` Fehler wirft: Chris informieren, NICHT stillschweigend überspringen
-- Falls Umgebung kein PowerShell hat: explizit melden „⚠️ sync_repos.ps1 nicht ausgeführt — bitte manuell nachholen"|nicht „vergessen"
-- Session-Ende ODER nach 5. Patch ist KEINE Ausrede mehr|sync nach JEDEM push (Coda-Setup pusht zuverlässig, vergisst aber Sync)
-- `powershell -ExecutionPolicy Bypass -File sync_repos.ps1`|sync Ratatoskr (SUPERVISOR/CLAUDE/PROJEKTDOKU/lessons/backlog/README) + Claude-Repo (lessons_ZERBERUS.md→`lessons/zerberus_lessons.md`)|zieht Commit-Msg aus letztem Zerberus-Commit|pusht nur bei Änderungen
-- NIEMALS Ratatoskr/Claude-Repo manuell editieren|nur via `sync_repos.ps1`|direkte Commits werden überschrieben
-- Universelle Lessons können direkt in `C:\Users\chris\Python\Claude\lessons\` (z.B. `sqlite-db.md`)|Sync-Script fasst sie nicht an (schreibt nur `zerberus_lessons.md`)
-- **Wichtig:** sync_repos.ps1 muss nach der Konsolidierung auf den neuen Lessons-Pfad `lessons_ZERBERUS.md` zeigen — wenn das Skript noch `lessons.md` liest, läuft es ins Leere.
+- PROJEKTDOKUMENTATION.md NICHT vollstaendig laden (5000+ Zeilen)
+- Alte Namen `CLAUDE.md` / `HYPERVISOR.md` nicht mehr referenzieren — final sind `CLAUDE_ZERBERUS.md` / `SUPERVISOR_ZERBERUS.md`
+- Patch-Prompts mit falschen lokalen Pfaden immer verifizieren (Zerberus, Ratatoskr, Claude — Pfade siehe oben)
+- `--break-system-packages` NIE — immer im venv installieren

@@ -1,8 +1,8 @@
 # Zerberus Pro 4.0 – Projektdokumentation
 
 <!-- STAND-ANKER:START -->
-**Stand:** P220 - Phase 5b - 2026-05-21 - 2900+ Tests
-**Commits:** Zerberus `da0e5a0` - Ratatoskr `6bf7936` - Claude `9a47b1d`
+**Stand:** P221-v2b - Phase 5b - 2026-05-21 - 2900+ Tests
+**Commits:** Zerberus `4edfd35` - Ratatoskr `6bf7936` - Claude `9a47b1d`
 _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py._
 <!-- STAND-ANKER:END -->
 
