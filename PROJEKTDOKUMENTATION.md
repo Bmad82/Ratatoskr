@@ -1,8 +1,8 @@
 # Zerberus Pro 4.0 – Projektdokumentation
 
-**Stand:** 2026-05-21 (FEATURE_REQUEST Komponenten-Migration Session N+4 — Chat-List + Bubbles-Kintsugi-Typografie)
+**Stand:** 2026-05-21 (FEATURE_REQUEST Komponenten-Migration Sammel-Session N+5..N+10 — Kintsugi-Typografie Reasoning + Input + Scroll-Nav + Project-View + Settings + Final Cleanup, **STATUS: FERTIG**)
 **Version:** 4.0 (Patch 100 – Meilenstein: Hel-Hotfix + JS-Integrity + Easter Egg)
-**Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration laeuft nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10 Sub-Sessions, Login N+1 + Header N+2 + Sidebar N+3 + Bubbles N+4 erledigt, N+5 bis N+10 stehen aus). FEATURE_REQUEST_ZERBERUS.md bleibt liegen.
+**Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10/10 Sub-Sessions abgeschlossen). FEATURE_REQUEST_ZERBERUS.md umbenannt zu FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md. Sammel-Lieferung 2026-05-21: N+5 (`e3cb639`) Reasoning Mono-Caps · N+6 (`b75739f`) Input-Bar Body-Font + Placeholder Italic · N+7 (`40b44a1`) Scroll-Nav-Active-Oval Token-Nesting · N+8 (`1875350`) Project-View Display+Mono+Body · N+9 (`0bc73b4`) Settings-Modal Mono+Display · N+10 (`c241099`) Mobile-Check + git rm der verwaisten Prototyp-Files (nala-kintsugi.css, nala-kintsugi-prototype.js, -1539 Z. toter Code). Mega-Regression 759/759 PASSED.
 
 ---
 
