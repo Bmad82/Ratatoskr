@@ -1,8 +1,8 @@
 # Zerberus Pro 4.0 – Projektdokumentation
 
-**Stand:** 2026-04-19
+**Stand:** 2026-05-21 (FEATURE_REQUEST Nachtrag — Gist-Sync-Aufholarbeit + Migration-Plan + Login-Polish, Session 2/2)
 **Version:** 4.0 (Patch 100 – Meilenstein: Hel-Hotfix + JS-Integrity + Easter Egg)
-**Status:** Aktiv in Entwicklung
+**Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration laeuft nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10 Sub-Sessions, Login N+1 erledigt, N+2 bis N+10 stehen aus). FEATURE_REQUEST_ZERBERUS.md bleibt liegen.
 
 ---
 
