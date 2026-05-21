@@ -369,7 +369,7 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 - Neue Einträge in CLAUDE_ZERBERUS.md + lessons_ZERBERUS.md IMMER im komprimierten Format schreiben
 
 ## Marathon-Workflow (Phase 5+)
-- Session-Start-Pflicht (Konsolidierung 2026-05-15): FEATURE_REQUEST_ZERBERUS.md → mjolnir.md → HANDOVER_ZERBERUS.md → MARATHON_WORKFLOW_ZERBERUS.md → lessons_ZERBERUS.md → loslegen
+- Session-Start-Pflicht (Konsolidierung 2026-05-15, mw-v2a 2026-05-21): FEATURE_REQUEST_ZERBERUS.md → mjolnir.md → HANDOVER_ZERBERUS.md → MARATHON_WORKFLOW_ZERBERUS.md → `python scripts/lessons_lookup.py --task '<aktuelle Aufgabe>'` (NICHT lessons_ZERBERUS.md komplett laden — TF-IDF-Retrieval liefert Top-3 relevante Bloecke; bei 0 Treffern: Aufgabe ist neu, kein Lesson-Kontext) → loslegen
 - Ziele statt Rezepte|WAS nicht WIE|eigene Architektur-Entscheidungen erwünscht
 - Stopp bei ~400k Token oder Kontextvergiftung|aktuellen Patch sauber fertig → Doku → Handover → STOPP
 - Blockiert → Frage in DECISIONS_PENDING parken → nächsten unabhängigen Patch nehmen

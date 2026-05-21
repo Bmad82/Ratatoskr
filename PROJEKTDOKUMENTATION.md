@@ -1,5 +1,11 @@
 # Zerberus Pro 4.0 – Projektdokumentation
 
+<!-- STAND-ANKER:START -->
+**Stand:** P220 - Phase 5b - 2026-05-21 - 2900+ Tests
+**Commits:** Zerberus `da0e5a0` - Ratatoskr `6bf7936` - Claude `9a47b1d`
+_Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py._
+<!-- STAND-ANKER:END -->
+
 **Stand:** 2026-05-21 (FEATURE_REQUEST Komponenten-Migration Sammel-Session N+5..N+10 — Kintsugi-Typografie Reasoning + Input + Scroll-Nav + Project-View + Settings + Final Cleanup, **STATUS: FERTIG**)
 **Version:** 4.0 (Patch 100 – Meilenstein: Hel-Hotfix + JS-Integrity + Easter Egg)
 **Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10/10 Sub-Sessions abgeschlossen). FEATURE_REQUEST_ZERBERUS.md umbenannt zu FEATURE_REQUEST_ZERBERUS_ERLEDIGT.md. Sammel-Lieferung 2026-05-21: N+5 (`e3cb639`) Reasoning Mono-Caps · N+6 (`b75739f`) Input-Bar Body-Font + Placeholder Italic · N+7 (`40b44a1`) Scroll-Nav-Active-Oval Token-Nesting · N+8 (`1875350`) Project-View Display+Mono+Body · N+9 (`0bc73b4`) Settings-Modal Mono+Display · N+10 (`c241099`) Mobile-Check + git rm der verwaisten Prototyp-Files (nala-kintsugi.css, nala-kintsugi-prototype.js, -1539 Z. toter Code). Mega-Regression 759/759 PASSED.
