@@ -1,8 +1,8 @@
 # Zerberus Pro 4.0 – Projektdokumentation
 
-**Stand:** 2026-05-21 (FEATURE_REQUEST Komponenten-Migration Session N+3 — Sidebar-Kintsugi-Typografie)
+**Stand:** 2026-05-21 (FEATURE_REQUEST Komponenten-Migration Session N+4 — Chat-List + Bubbles-Kintsugi-Typografie)
 **Version:** 4.0 (Patch 100 – Meilenstein: Hel-Hotfix + JS-Integrity + Easter Egg)
-**Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration laeuft nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10 Sub-Sessions, Login N+1 + Header N+2 + Sidebar N+3 erledigt, N+4 bis N+10 stehen aus). FEATURE_REQUEST_ZERBERUS.md bleibt liegen.
+**Status:** Aktiv in Entwicklung — Kintsugi-Komponenten-Migration laeuft nach `docs/NALA_KINTSUGI_MIGRATION_PLAN.md` (10 Sub-Sessions, Login N+1 + Header N+2 + Sidebar N+3 + Bubbles N+4 erledigt, N+5 bis N+10 stehen aus). FEATURE_REQUEST_ZERBERUS.md bleibt liegen.
 
 ---
 

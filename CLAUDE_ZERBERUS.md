@@ -379,6 +379,9 @@ Coda ist kein nervöser Junior|macht was logisch folgt|kein Bauchgefühl
 - **Session-Start: NICHT fragen "was soll ich machen" (P219-pre — Prozess-Regel)** — die HANDOVER-Empfehlung am Ende des "Nächster Schritt"-Abschnitts ist der Default. Coda lädt HANDOVER_ZERBERUS.md, liest die Empfehlung, legt los. Nur wenn Chris in der Eröffnungs-Message explizit eine andere Aufgabe reingibt, wird davon abgewichen. Die Antwort "Was möchtest du — A, B oder C?" ist hier verboten — Chris will Ergebnisse sehen, nicht Rückfragen beantworten. Verweis: das ist die Marathon-Variante der allgemeinen FR-AUTONOME-PRIORITÄT-Regel oben.
 - **HANDOVER-Formulierung am Session-Ende auch autonom (P219-pre)** — Statt "Was soll ich machen — A, B oder C?" als Schlussfrage schreibt Coda eine Empfehlung in der Form "Nächste Session startet mit X (Begründung — z.B. niedrigster Aufwand / direkte Schulden-Folgekarte / User-Bug-Report). Falls Chris was anderes will, überschreibt er die Eröffnungs-Message." Die nächste Coda-Instanz kann dann ohne Rückfrage loslegen. Nur Architektur-Entscheidungen mit echtem Risiko bleiben als Frage stehen (in DECISIONS_PENDING).
 
+## Session-Auffüll-Regel (2026-05-21, Kintsugi-Migration Token-Audit)
+Primärer Auftrag erledigt UND < 300k Token verbraucht → weiterarbeiten, nicht abschließen|Auffüll-Reihenfolge: (1) FEATURE_REQUEST Restpunkte (2) MARATHON_WORKFLOW offene Items (3) BACKLOG (4) Test-Schulden (5) Doku-Hygiene|Stopp bei ~350k (50k Reserve für Doku)|Zwischen-Patches: eigener Commit, ABER kein separater HANDOVER — ein HANDOVER am Session-Ende für alle|AUSNAHME: destruktive/riskante Patches NIE als Auffüller|Anti-Pattern: "Patch fertig bei 120k → Doku → STOPP" = 80% Overhead
+
 ## HANDOVER "Nächster Schritt" — Autonomie-Regel (verschärft)
 - GENAU EIN Default als Feststellung, KEINE Optionsliste|"Nächster Schritt ist X (Begründung)." — Punkt.
 - Alternativen die Chris entscheiden muss → DECISIONS_PENDING (NUR bei echtem Architektur-Risiko)
