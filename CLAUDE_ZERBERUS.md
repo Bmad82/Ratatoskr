@@ -32,7 +32,7 @@ Bei JEDEM Patch der UI / Auth / Chat-Pipeline / RAG / Guard / Huginn / Endpoint 
 Alles was Coda testen kann → Coda testet. Vor jedem „Chris muss noch testen"-Vermerk gilt: kann ich das selbst testen? JA → Integration-Test schreiben, NICHT eskalieren. Detail: [`playbooks/testing.md`](playbooks/testing.md).
 
 ### 5. Pflicht nach jedem Patch
-SUPERVISOR_ZERBERUS.md aktualisieren (Nr | Datum | 3-5 Zeilen). Offene Items pflegen. PROJEKTDOKUMENTATION.md anhaengen (Patch-Nr+Titel | Datum | Was | Dateien | Teststand). [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur aktualisieren + via RAG-Upload nach Hel pushen. Detail: [`playbooks/rag_pipeline.md`](playbooks/rag_pipeline.md).
+SUPERVISOR_ZERBERUS.md aktualisieren (Nr | Datum | 3-5 Zeilen). Offene Items pflegen. PROJEKTDOKUMENTATION.md anhaengen (Patch-Nr+Titel | Datum | Was | Dateien | Teststand). [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur aktualisieren — **KEIN automatischer RAG-Upload mehr** (FR 2026-05-22): Datei bleibt im Repo, Chris laedt sie bei Bedarf manuell ueber Hel hoch. Detail: [`playbooks/rag_pipeline.md`](playbooks/rag_pipeline.md).
 
 ### 6. Repo-Sync (Pflicht-Letztschritt)
 Nach `git push`: `sync_repos.ps1` DANN `scripts/verify_sync.ps1` — beide Pflicht. Bei ❌ Exit 1: NICHT weitermachen, Sync-Problem loesen. Patch gilt erst bei ✅ Exit 0 als abgeschlossen. Detail: [`playbooks/observability.md`](playbooks/observability.md).
