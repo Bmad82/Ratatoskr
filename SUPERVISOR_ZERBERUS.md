@@ -12,15 +12,19 @@ _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py.
 
 ## Aktueller Patch
 
-**mw-v2b-durchsetzung (2026-05-21)** — Marathon-Workflow v2b umgesetzt. Hooks-Scripts (`scripts/lessons_lookup_auto.py`, `validate_edit.py`, `session_end_check.py`) liegen lauffähig im Repo; Verdrahtung in `.claude/settings.json` ist opt-in (siehe `scripts/HOOK_SETUP.md`). CLAUDE_ZERBERUS.md auf Prozess-Regeln entschlackt (806 → 281 Zeilen, Patch-Details in `CLAUDE_ZERBERUS_ARCHIV.md`); pfadspezifische Doku als `playbooks/` (Default-Verweis) + `docs/claude_rules/` (opt-in `.claude/rules/`-Stash mit `globs:`-Frontmatter, siehe `docs/claude_rules/README.md`). SUPERVISOR_ZERBERUS.md auf < 80 Zeilen entschlackt (Patch-Historie in `SUPERVISOR_ZERBERUS_ARCHIV_2026-05-21.md`). lessons_ZERBERUS.md in Pipe-only + `_KONTEXT.md` gesplittet (Coda lädt nur Pipes, KONTEXT on-demand via `scripts/lessons_lookup.py`).
+**FR 2026-05-23 orchestrate-mvp (2026-05-23)** — ORCHESTRATE als dritter Pipeline-Pfad. Pre-call Detector (`zerberus/core/orchestrate_intent.py`, Zwei-Pfad-Logik) + `HuginnIntent.ORCHESTRATE`-Enum, OrchestratorService mit Plan-Call + Synthese (`zerberus/core/orchestrate.py`, robustes JSON-Parsing, Cost-Estimation), HitL-Gate (`zerberus/core/orchestrate_hitl.py`, P206-Pattern + Per-Step-Opt-out), Worker-Dispatcher (`zerberus/core/orchestrate_worker.py`, sequenzielle Kontext-Kette, SSE-Progress, Guard-DI), Wiring in `legacy.py` chat_completions VOR `load_system_prompt` + Endpoints `/v1/orchestrate/poll` und `/v1/orchestrate/resolve`. Alle LLM-Calls ueber OpenRouter / DeepSeek V3.2 — KEIN Claude-Call im neuen Pfad (Anthropic-Billing-Split 15.06.2026). 87 neue Tests gruen (Intent 17, Service 22, HitL 19, Worker 15, Legacy-Wiring 14), kein Regress. Schritt 6 (Sandbox-Integration) und Frontend-Plan-Karte als Backlog B-080..B-084.
 
 ## Vorheriger Patch
+
+**Sammel-Doku FR 2026-05-23 Pipeline-Diagnose (2026-05-23)** — Sidebar NULL-safe NOT IN, Modell-Pille re-hydrate, chat_history_max_messages 40, DECISIONS D-007, RAG-Eval Phase 5b Audit. Details in `mjolnir.md`-Vorlauf-Eintrag und HANDOVER.
+
+## Vorvorheriger Patch
 
 **Komponenten-Migration N+5..N+10 (2026-05-21)** — Kintsugi-Typografie auf Reasoning/Input/Scroll-Nav/Project-View/Settings + Final Cleanup. 759/759 Tests grün. Detail im Archiv-Eintrag.
 
 ## Phase 5 — Status
 
-Phase 5a (P194-P203) ABGESCHLOSSEN. Phase 5b läuft (Lessons-Cron B-074 fertig, Power-Features-Roadmap in [`MARATHON_WORKFLOW_ZERBERUS.md`](MARATHON_WORKFLOW_ZERBERUS.md)). Phase 5c (UI-Redesign P-UI-1..11) ABGESCHLOSSEN.
+Phase 5a (P194-P203) ABGESCHLOSSEN. Phase 5b läuft — Warm-up komplett ERLEDIGT (B-073 WhatsApp-Removal, B-074 Lessons-Cron, DECISIONS_ZERBERUS, Whisper-INT8-Werkzeug; A/B-Messung INT8 vs. FP16 offen als D-004). Power-Features-Roadmap (Cluster 1–3) in [`MARATHON_WORKFLOW_ZERBERUS.md`](MARATHON_WORKFLOW_ZERBERUS.md) als Single Source of Truth — die frühere separate `PHASE_5B_ROADMAP_ZERBERUS.md` wurde per FR 2026-05-22 in den Workflow eingehängt und gelöscht. Phase 5c (UI-Redesign P-UI-1..11) ABGESCHLOSSEN.
 
 ## Architektur-Referenz
 
