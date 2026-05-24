@@ -5,6 +5,36 @@ Universelle Erkenntnisse: https://github.com/Bmad82/Claude/lessons/
 
 ---
 
+## Legacy-Config-Datei-Migration: Rename-only, kein Merge (FR 2026-05-24 Pipeline-Bereinigung Session 2)
+
+`config.yaml` war seit Patch 105/112 SSoT, aber `config.json` lag noch im Repo-Root und wurde nur per Warn-Log registriert — Split-Brain-Falle, wenn jemand die JSON manuell editiert hat|Naive FR-Lesart "Migration-Pfad ... beim Start einmalig nach config.yaml migrieren" koennte als 3-Wege-Merge missverstanden werden|Tatsaechlich enthaelt eine alte `config.json` per Definition VERALTETE Werte (Hel-Schreibungen aus der Pre-P105-Aera) — Merge wuerde den Split-Brain reanimieren (alte JSON-Werte koennten frische YAML-Werte ueberschreiben)|Loesung: idempotenter Rename `config.json` → `config.json.deprecated` mit drei expliziten Returns (`"absent"` no-op, `"renamed"` erfolgreich, `"conflict"` beide vorhanden → WARN + manueller Eingriff, KEIN Overwrite)|Hook in `invariants.check_config_consistency()` weil Boot-Time-Selfchecks dort ohnehin versammelt sind|Test-Backstop: Source-Audit ueber das gesamte aktive Paket nach `"config.json"`-String-Literalen mit gestrippten Docstrings/Kommentaren — Tests + Migrations-Modul ausgenommen, sonst null Treffer|Regel: bei Legacy-File-Migration immer Rename-only mit `.deprecated`-Suffix, nie Auto-Merge; die kanonische Datei darf nie zugunsten der veralteten ueberschrieben werden
+
+---
+
+## Cache-Invalidate-Decorator-Konsistenz schlaegt manuelle reload-Calls (Hel post_config, FR Session 2 2026-05-24)
+
+Patch 156 fuehrte `@invalidates_settings` als Decorator-Konvention fuer alle Hel-YAML-Writer ein|Ausnahme blieb `post_config` mit manuellem `if changed: reload_settings()`-Aufruf — funktional korrekt, aber inkonsistent mit den 5 anderen Writern (`post_huginn_config`, `post_vision_config`, `post_pacemaker_*`, `post_provider_blacklist`)|Risiko: wenn jemand spaeter den Endpoint refactort und den Call vergisst, schweigender Cache-Drift (Hel-UI zeigt alten Wert nach Save)|Fix: Decorator vorhaengen, `reload_settings()`-Call entfernen — Verhalten identisch (beide Pfade laden den Singleton nach jedem Write neu), aber jetzt eine Konvention statt zwei|Test-Backstop: `re.search(r"@invalidates_settings[^\n]*\n(?:[^\n]*\n)?async def post_config\b", text)` pinnt den Decorator UND ein zweiter Test verbietet `reload_settings()` im Funktionskoerper (sonst doppelt geladen)|Regel: bei Decorator-basierten Konventionen sind Ausnahmen Schulden — beim ersten Anlass alle Stellen auf die Konvention bringen, sonst wandern Bug-Fix-Patterns zwischen "manuell" und "decorator" hin und her
+
+---
+
+## Per-Request-Disk-Read fuer Templates kostet nichts und liefert Live-Edit (Hel-Template-Extraktion, FR 2026-05-24 Pipeline-Bereinigung Session 1)
+
+Modul-Konstante `ADMIN_HTML = open(...).read()` faengt das Template einmalig beim Import|Frontend-Edit wird erst sichtbar nach Python-Reload (in Produktion: Server-Restart, in Dev: Watcher-Bounce)|Per-Request-Read im Endpoint-Body kostet einen 50-KB-File-I/O — auf SSD < 1 ms, kein messbarer Latenz-Hit|Live-Edit-UX wiegt das auf: Markup-Patch im Editor speichern + Browser-F5 = sofort sichtbar, kein Restart|Trick: die Modul-Konstante als Backward-Compat-Symbol behalten (alte Source-Audit-Tests asserten weiter auf `ADMIN_HTML`), der Endpoint liest aber von Disk|Regel: bei statischen HTML-Templates ohne Variable-Injection (alle Daten kommen via XHR/SSE post-Render) ist per-Request-Read der Standard, nicht die Optimierung
+
+---
+
+## data-action-Pattern statt eval/new-Function fuer Inline-Handler-Migration (Hel DOM-Cleanup, 2026-05-24)
+
+94 Inline-onclick/onchange/oninput zu konvertieren ist mechanische Arbeit — der Reflex ist `eval(handlerString)` oder `new Function(handlerString)` als Mini-Dispatcher|Beides ist CSP-aequivalent zu inline-handlers (`unsafe-eval` statt `unsafe-inline`), bringt also nichts|Sauber: `data-{event}-action="funcName"` + `data-{event}-args='[...]'` als JSON, plus drei Top-Level-Listener (`click`/`change`/`input`) mit `event.target.closest('[data-' + evt + '-action]')` als Dispatcher|`this.value`-Sentinel als `__VALUE__`-String in den Args, beim Dispatch durch `el.value` ersetzt — die haeufigste Inline-Spezial-Form (Slider-Display-Update)|Komplexe Inline-Expressions (`if(x) x.method()`, `window.open(...)`) zu **Named-Helpers** promoten — kein Versuch das im Generator zu parsen|Regel: Wenn eine Inline-Migration "nur noch eval"-rufgegen schreit, eine Stufe zurueck und das data-action-Schema bauen — kostet eine Stunde, spart Wartung + CSP-Tightening-Pfad
+
+---
+
+## Multi-Session-Marathon braucht STATUS-Header-Disziplin im mjolnir.md (FR Pipeline-Bereinigung Session 1, 2026-05-24)
+
+Multi-Session-FRs (8 Sessions, eine pro Coda-Aufruf) brauchen klare Marker fuer den Workflow|`STATUS: FERTIG` in mjolnir.md = die naechste Session loescht es und faengt komplett neu an|`STATUS: IN_ARBEIT` = der Multi-Session-Auftrag laeuft noch, naechste Session fortsetzen|Falle: vergisst man IN_ARBEIT zu setzen, sieht die naechste Coda-Session „FERTIG" und ignoriert den noch offenen FR — Marathon bricht ab|Doppel-Belt: zusaetzlich im mjolnir.md eine fettgesetzte WARNUNG an Chris („KEINEN neuen FEATURE_REQUEST schicken"), weil der Supervisor sonst parallele FRs reinkippen koennte und der Multi-Session-Workflow kollidiert|Regel: bei Multi-Session-FR IMMER vier Marker setzen — (a) `STATUS: IN_ARBEIT`, (b) `FORTSCHRITT: X von Y Sessions`, (c) `NAECHSTE SESSION:` mit konkretem Session-Namen, (d) WARNUNG-Block an Chris
+
+---
+
 ## Claude Design ist kein Dialog-Partner — Briefing als vollständiger Block (Code Cat Wireframes, 2026-05-24)
 
 Anlass: Code Cat Wireframes, 24.05.2026|Claude Design stellt Rückfragen, wartet aber nur ~3 Sekunden auf Antwort und macht dann selbstständig weiter|Dialog-Workflow fuehrt zu ungewollten Eigeninterpretationen|Loesung: Vollstaendiges Briefing als zwei Dateien — Struktur-JSON (Layout-Skelett) + DESIGN_KINTSUGI.md (Aesthetik)|Keine Luecken lassen, Rueckfragen sofort als Block beantworten|Regel: Bei Claude Design immer alles vorher fertig haben, kein iterativer Dialog
