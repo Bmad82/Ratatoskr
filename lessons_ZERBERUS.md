@@ -5,6 +5,24 @@ Universelle Erkenntnisse: https://github.com/Bmad82/Claude/lessons/
 
 ---
 
+## Claude Design ist kein Dialog-Partner — Briefing als vollständiger Block (Code Cat Wireframes, 2026-05-24)
+
+Anlass: Code Cat Wireframes, 24.05.2026|Claude Design stellt Rückfragen, wartet aber nur ~3 Sekunden auf Antwort und macht dann selbstständig weiter|Dialog-Workflow fuehrt zu ungewollten Eigeninterpretationen|Loesung: Vollstaendiges Briefing als zwei Dateien — Struktur-JSON (Layout-Skelett) + DESIGN_KINTSUGI.md (Aesthetik)|Keine Luecken lassen, Rueckfragen sofort als Block beantworten|Regel: Bei Claude Design immer alles vorher fertig haben, kein iterativer Dialog
+
+---
+
+## Mobile und Desktop sind getrennte Welten — kein Responsive-Kompromiss (Code Cat vs. Nala, 2026-05-24)
+
+Versuchung: ein „responsive" Frontend bauen das beides kann|Realitaet: Mobile (Single-Column, Touch, 44px Targets, :active) und Desktop (Three-Column, Hover, Keyboard, Drag-Resize, Min-Width 1024px) folgen unvereinbaren Interaktions-Patterns|Loesung: getrennte Frontends — Nala (Mobile-only) und Code Cat (Desktop-only)|Gleiche Design-Tokens (Kintsugi), verschiedene Layout-Patterns|Regel: Neue Frontends: zuerst entscheiden ob Mobile oder Desktop, nie beides in einer Datei
+
+---
+
+## Guard-Wiring war DI-Slot ohne Caller — orchestrate-mvp Schritt 0 (FR code-cat-mvp, 2026-05-24)
+
+`dispatch_worker_chain()` hatte schon einen `guard_callable=None`-Slot|Aber legacy.py rief ohne Argument auf — kein Guard pro Worker-Output|Folge: 87 Tests gruen, ORCHESTRATE-Pfad sauber, aber Halluzinations-Schutz nur theoretisch verfuegbar|Fix: 5-Zeilen-Wrapper in legacy.py der `hallucination_guard.check_response` auf die `async (user_msg, answer) -> dict | None` Signatur des Workers abbildet|Lesson: DI-Slots ohne Default-Caller sind versteckte Schulden — beim Schreiben des Slots gleich den ersten Default-Caller mit verdrahten, sonst sammelt sich Tech-Debt im naechsten FR
+
+---
+
 ## Session-Auffüll-Regel — Bootstrap-Overhead nicht pro Mini-Patch zahlen (2026-05-21, Kintsugi-Migration Token-Audit)
 
 Sessions schlossen bei ~120k ab obwohl 300k+ Budget frei war|3 Sessions à 120k statt 1 à 360k = 200k verschwendet|Mega-Patch-Ära (P122–P152) bewies: 24k/Patch bei Auffüll-Logik vs 100k+/Patch ohne|Fix: Primärer Auftrag fertig UND < 300k verbraucht → nächstes Item nehmen (FEATURE_REQUEST > MARATHON_WORKFLOW > BACKLOG > Test-Schulden > Doku-Hygiene), Stopp bei ~350k|Nur sichere unabhängige Items als Auffüller, destruktive Ops nie|Ein HANDOVER am Ende statt pro Zwischen-Patch

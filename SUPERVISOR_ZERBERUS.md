@@ -12,15 +12,17 @@ _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py.
 
 ## Aktueller Patch
 
-**FR 2026-05-23 orchestrate-mvp (2026-05-23)** — ORCHESTRATE als dritter Pipeline-Pfad. Pre-call Detector (`zerberus/core/orchestrate_intent.py`, Zwei-Pfad-Logik) + `HuginnIntent.ORCHESTRATE`-Enum, OrchestratorService mit Plan-Call + Synthese (`zerberus/core/orchestrate.py`, robustes JSON-Parsing, Cost-Estimation), HitL-Gate (`zerberus/core/orchestrate_hitl.py`, P206-Pattern + Per-Step-Opt-out), Worker-Dispatcher (`zerberus/core/orchestrate_worker.py`, sequenzielle Kontext-Kette, SSE-Progress, Guard-DI), Wiring in `legacy.py` chat_completions VOR `load_system_prompt` + Endpoints `/v1/orchestrate/poll` und `/v1/orchestrate/resolve`. Alle LLM-Calls ueber OpenRouter / DeepSeek V3.2 — KEIN Claude-Call im neuen Pfad (Anthropic-Billing-Split 15.06.2026). 87 neue Tests gruen (Intent 17, Service 22, HitL 19, Worker 15, Legacy-Wiring 14), kein Regress. Schritt 6 (Sandbox-Integration) und Frontend-Plan-Karte als Backlog B-080..B-084.
+**FR 2026-05-24 code-cat-mvp (2026-05-24)** — Desktop-only Frontend "Code Cat" fuer das ORCHESTRATE-Backend. Schritt 0 Guard-Wiring (`_orchestrate_guard` async-Wrapper um `hallucination_guard.check_response`, als `guard_callable=` an `dispatch_worker_chain()` durchgereicht, Fail-open D-007). Schritte 1-5 Frontend (`zerberus/static/code_cat.html` ~750 LOC, Single-File Vanilla HTML/CSS/JS, eigener `code_cat_router` ohne `/v1`-Prefix; Three-Column-Layout 38px Rails + flex Center; Kintsugi-Tokens; min-width 1024px; Plan-Karte mit Step-Cards/Approve/Reject/Per-Step-Opt-out; SSE-Wiederverwendung `/nala/events`; Log-Panel mit Level-Farben + Auto-Scroll + Kostenfooter; Session-Sidebar Overlay+Pin via `/archive/sessions`; Input-Anchor → `/v1/chat/completions`). Schritt 6 `DESIGN_KINTSUGI.md` Sektionen 13/14/15 ergaenzt. Schritt 7 drei Lessons in `lessons_ZERBERUS.md`. 48 neue Tests gruen (`test_fr_2026_05_24_code_cat_mvp.py` — 13 Klassen Source-Audit-Style), kein Regress in 87 orchestrate-mvp Tests. Summe 135 gruene Tests. B-080 (Frontend Plan-Karte) und B-081 (Guard im Worker aktivieren) geschlossen.
 
 ## Vorheriger Patch
 
-**Sammel-Doku FR 2026-05-23 Pipeline-Diagnose (2026-05-23)** — Sidebar NULL-safe NOT IN, Modell-Pille re-hydrate, chat_history_max_messages 40, DECISIONS D-007, RAG-Eval Phase 5b Audit. Details in `mjolnir.md`-Vorlauf-Eintrag und HANDOVER.
+**FR 2026-05-23 orchestrate-mvp (2026-05-23)** — ORCHESTRATE als dritter Pipeline-Pfad. Pre-call Detector (`zerberus/core/orchestrate_intent.py`, Zwei-Pfad-Logik) + `HuginnIntent.ORCHESTRATE`-Enum, OrchestratorService mit Plan-Call + Synthese (`zerberus/core/orchestrate.py`, robustes JSON-Parsing, Cost-Estimation), HitL-Gate (`zerberus/core/orchestrate_hitl.py`, P206-Pattern + Per-Step-Opt-out), Worker-Dispatcher (`zerberus/core/orchestrate_worker.py`, sequenzielle Kontext-Kette, SSE-Progress, Guard-DI), Wiring in `legacy.py` chat_completions VOR `load_system_prompt` + Endpoints `/v1/orchestrate/poll` und `/v1/orchestrate/resolve`. Alle LLM-Calls ueber OpenRouter / DeepSeek V3.2 — KEIN Claude-Call im neuen Pfad (Anthropic-Billing-Split 15.06.2026). 87 neue Tests gruen (Intent 17, Service 22, HitL 19, Worker 15, Legacy-Wiring 14), kein Regress. Schritt 6 (Sandbox-Integration) und Frontend-Plan-Karte als Backlog B-080..B-084.
 
 ## Vorvorheriger Patch
 
-**Komponenten-Migration N+5..N+10 (2026-05-21)** — Kintsugi-Typografie auf Reasoning/Input/Scroll-Nav/Project-View/Settings + Final Cleanup. 759/759 Tests grün. Detail im Archiv-Eintrag.
+**Sammel-Doku FR 2026-05-23 Pipeline-Diagnose (2026-05-23)** — Sidebar NULL-safe NOT IN, Modell-Pille re-hydrate, chat_history_max_messages 40, DECISIONS D-007, RAG-Eval Phase 5b Audit. Details in `mjolnir.md`-Vorlauf-Eintrag und HANDOVER.
+
+(Vorvorvorheriger Patch — Komponenten-Migration N+5..N+10 vom 2026-05-21 — liegt im Archiv `SUPERVISOR_ZERBERUS_ARCHIV_2026-05-21.md`.)
 
 ## Phase 5 — Status
 
