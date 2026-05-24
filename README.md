@@ -28,6 +28,18 @@ nur dein lokaler Computer und eine KI-API deiner Wahl.
 
 ---
 
+## Namens-Legende (Norse-Mythologie)
+
+Die Komponenten tragen Namen aus der nordischen Mythologie. Einmal erklärt sind sie kurz und einprägsam; wer Code liest, findet sie hier zugeordnet (FR 2026-05-24 Pipeline-Bereinigung Session 8):
+
+- **Nala** — Chat-UI (Browser-Frontend für den User; auch als "Rosa" bekannt)
+- **Hel** — Admin-Dashboard (Konfiguration, Metriken, RAG-Verwaltung)
+- **Huginn** — Telegram-Bot (Odins Rabe, der Botschaften überträgt)
+- **Loki / Fenrir / Vidar** — Test-Agents (E2E-Happy-Path / Chaos-Stress / Post-Deploy-Smoke)
+- **Mjölnir** — CLI / Remote-Steuerung (Hammerfall, FR-Auftrags-Round-Trip)
+
+---
+
 ## Was brauchst du?
 
 Bevor du anfängst, besorg dir folgende Dinge (alle kostenlos oder mit kostenlosem Einstieg):
