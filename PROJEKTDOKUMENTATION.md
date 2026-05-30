@@ -1572,6 +1572,42 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-02 Backlog-Inventur (Tier 1, Session #3, STATUS: IN_ARBEIT)
+
+**Auftrag:** Zweites Item der Master-Queue. `BACKLOG_ZERBERUS.md` stand auf Header *Patch 182 (2026-04-30)* — veraltet. Jedes `OFFEN`-Item per Grep/Read gegen aktuellen Code verifizieren (Lesson R-INV-2 — BACKLOG-Eintrag kann laengst erledigt sein), Header frischen, Befunde im Kintsugi-Kommentarblock am Ende dokumentieren. Danach ist BACKLOG vertrauenswuerdige sekundaere Auffuell-Quelle (primaer bleibt Master-Queue).
+
+**Verfahren:** Explore-Subagent fuer breiten Sweep aller ~30 OFFEN-Items (B-010..B-100), dann direkte Code-Verifikation der ERLEDIGT-Befunde durch Coda (R-INV-2: Subagent-Output ist Hypothese). Greps: `_RAG_TOP_K`, `_chat_completions_body`, `--read-only`, `extract_memories`, etc. Reads: `executor.py:1-80`, `chat_pipeline.py:1-20`, `extractor.py:1-50`.
+
+**Statuswechsel OFFEN → ERLEDIGT (4 Items, alle mit file:line-Beweis):**
+
+- **B-013 Background Memory Extraction (Phase 4)** — Patch 115: [`zerberus/modules/memory/extractor.py`](zerberus/modules/memory/extractor.py) mit `MEMORY_EXTRACTION_PROMPT`, Duplikat-Erkennung via Embedding-Cosine, Fail-Safe bei LLM-Timeouts. Manueller Trigger `POST /hel/admin/memory/extract` in [`zerberus/app/routers/hel.py:2629`](zerberus/app/routers/hel.py:2629). Frontend-Button in [`zerberus/app/templates/hel/hel.html:400`](zerberus/app/templates/hel/hel.html:400). Cron-Hookup im 04:30-Job nach BERT-Sentiment.
+
+- **B-015 R-07 Multi-Chunk-Aggregation** — Patch 101: `_RAG_TOP_K = 8` (statt 3) in [`zerberus/app/routers/orchestrator.py:65`](zerberus/app/routers/orchestrator.py:65) mit Aggregation-Hint Z. 565-584 (`"WICHTIG: Wenn die Frage nach einer Aufzählung, Liste oder ..."`). Aggregat-Pattern als `re.compile` (Z. 100). Logging-Tag `[AGG-101]`. Mirror in `chat_pipeline.py:1095-1116`. Query-Expander komplementaer in `zerberus/modules/rag/query_expander.py`.
+
+- **B-093 Executor-Sandbox-Hardening** — FR Rosa-Readiness R-05: `--read-only` + `--tmpfs /tmp:size=16m,exec` + `--pids-limit 64` + `--security-opt no-new-privileges` in [`zerberus/modules/sandbox/executor.py:47-50`](zerberus/modules/sandbox/executor.py:47). Docstring Z. 4-8 referenziert FR + `DOCKER_SANDBOX_AUDIT.md`. Konsistent mit `SandboxConfig.pids_limit`-Default 64.
+
+- **B-096 `_chat_completions_body` physisch nach core/chat_pipeline.py** — FR 2026-05-25 R-02: Definition in [`zerberus/core/chat_pipeline.py:137`](zerberus/core/chat_pipeline.py:137), Docstring Z. 5-19 dokumentiert die Migration und das Entfernen von `core_chat_pipeline` + `LegacyConfig.use_orchestrator`-Flag. `legacy.py` re-exportiert nur (`zerberus.app.routers.__init__` re-export). Folge-Item **B-099 (E2E Pre/Post-Move Tests) bleibt OFFEN** — Move ist abgeschlossen, Vergleichs-Tests aber noch nicht.
+
+**TEILWEISE-Befunde (kein Statuswechsel, dokumentiert fuer kuenftige Sessions):**
+
+- **B-011 Prosodie-Pipeline** — Modul + Gemma-Backend implementiert (`zerberus/modules/prosody/manager.py:189`), aber nicht default-aktiv. Bleibt OFFEN.
+- **B-014 Phase-4-Features (Sammel-Item)** — Category-Detection + Hallucination-Guard + Veto-Layer ERLEDIGT (`chat_pipeline.py:1197`); Multimodal-Upload + Color-Picker offen. Sammel-Item bleibt OFFEN.
+- **B-031 Hel RAG-Tab Dokumentenliste gruppiert** — Backend zaehlt `chunk_count` (`hel.py:2473`), gruppierte Frontend-View fehlt. Bleibt OFFEN.
+- **B-092 Sanitizer-Patterns** — P173-Basis-Patterns existieren (`input_sanitizer.py:77-99`), weitere deutsche Umschreibungen noch offen. Bleibt OFFEN.
+- **B-097 Sub-Endpoint-Refactor** — 8 Sub-Router unter `zerberus/app/routers/` existieren (hitl_router.py, spec_router.py, workspace_router.py, system_router.py, reasoning_router.py, …), `legacy.py` reduziert aber noch nicht vollstaendig leer. Bleibt OFFEN.
+
+**Drift-Korrektur (Spiegel-Inkonsistenz Master-Queue ↔ BACKLOG):**
+
+- **Q-39 (B-061 Relative-Pfade-Audit)** stand in der Master-Queue noch als OFFEN, im BACKLOG aber bereits seit 2026-05-16 als ERLEDIGT. Master-Queue auf ERLEDIGT korrigiert. Mini-Lesson (nicht generalisierbar genug fuer eigenen Bibel-Eintrag): mehrere Status-Quellen koennen driften — Q-02-Inventur ist gleichzeitig Master-Queue-Spiegel-Check.
+
+**Tests:** Q-02 ist reine Inventur (Doku) — kein Code-Touch, kein Test-Lauf noetig. Voll-Suite-Stand unveraendert seit Session #2 (~4828 Tests).
+
+**Code-Aenderungen:** keine in `zerberus/**`. Nur Doku-Updates: `BACKLOG_ZERBERUS.md` (Header + 4 Tabellenzeilen + Kintsugi-Kommentarblock), `MARATHON_WORKFLOW_ZERBERUS.md` (Q-02 + Q-39 in Master-Queue), `docs/PROJEKTDOKUMENTATION.md` (dieser Eintrag), `mjolnir.md`, `HANDOVER_ZERBERUS.md`. Auto-Restart-Hook wird NICHT triggern.
+
+**Q-02-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #3`. FR `STATUS: IN_ARBEIT` bleibt, Tier 1 komplett abgeschlossen (Q-01 + Q-02 done), Tier 2 (Q-10 Hel-Kontostand-Fix) als Naechstes.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
