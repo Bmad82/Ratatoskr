@@ -1628,6 +1628,30 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-11 Hel-/CodeCat-Kosten + Diagramm (Tier 2, Session #5, STATUS: IN_ARBEIT)
+
+**Auftrag:** Zweites Tier-2-Item und zweites CodeCat-Folge-Item aus `CODECAT_INVENTUR.md` Block C-3 + C-4. Befund: (a) `data.id` aus der OpenRouter-Response wurde in `llm.py` ignoriert — ohne diesen Pointer ist der asynchrone `GET /api/v1/generation/{id}`-Nachzug fuer den genauen Cent-Betrag nicht moeglich (die `X-Credits-Used`-Header-Approximation ist nur ein Schaetzwert). (b) Die `costs`-Tabelle wuchs ueber `Base.metadata.create_all()` ohne Alembic-Migration — keine reproduzierbare Schema-Versionierung, Live-DB und Test-DB driften potenziell auseinander. (c) Hel-UI hatte keine Live-Anzeige fuer Kosten seit letztem Reset und kein Diagramm — Chris kann die Kosten-Entwicklung nicht visuell verfolgen.
+
+**Fix (vier Komponenten, alle unter `zerberus/**` + `alembic/**`):**
+
+1. **Alembic-Migration [`alembic/versions/c4a91b7e2d8f_q11_costs_generation_id_caller_kind.py`](../alembic/versions/c4a91b7e2d8f_q11_costs_generation_id_caller_kind.py)** — fuegt `costs.generation_id` (String(64), nullable) + `costs.caller_kind` (String(32), default `'main'`) plus zwei Timeline-Indizes (`idx_costs_timestamp DESC`, `idx_costs_caller_kind`) hinzu. Vollstaendig idempotent via `_has_column`-Helper und `CREATE INDEX IF NOT EXISTS` (Stil Patch 92/194). `down_revision = "b03fbb0bd5e3"` haengt sauber an die letzte vorhandene Migration. `Cost`-Model in [`zerberus/core/database.py`](../zerberus/core/database.py) erweitert um die zwei neuen Spalten; `save_cost(..., generation_id=, caller_kind=)` ist 100% backward-compat zu allen 5-Arg-Callern (Default `caller_kind='main'`, Default `generation_id=None`).
+
+2. **`llm.py` capturt `data.id`** — [`zerberus/core/llm.py:108`](../zerberus/core/llm.py) liest `data.get("id")` aus der OpenRouter-Response und reicht es mit dem neuen `caller_kind: Optional[str] = None`-Parameter (klassifiziert die Aufruf-Herkunft: `main` / `supervisor` / `subagent` / `orchestrator`) an `save_cost` weiter. CODECAT_INVENTUR Block C-3 geschlossen. Der Default-Pfad (kein explizites `caller_kind=`) traegt `'main'` ein, damit Aggregations-Queries NULL-frei sind und alle Bestands-Caller (Hel-Chat, Telegram, Legacy-Pipeline) automatisch korrekt funktionieren.
+
+3. **Drei neue Hel-Endpoints** unter [`zerberus/app/routers/hel.py`](../zerberus/app/routers/hel.py): `GET /admin/costs/since-reset` (USD+EUR-Summe seit Reset-Baseline + `by_kind_usd` + `by_kind_eur`-Aufgliederung pro caller_kind), `POST /admin/costs/reset` (Tageskilometer-Prinzip — schreibt jetzigen UTC-ISO-Stempel nach `data/cost_reset_baseline.json`), `GET /admin/costs/timeline?days=7|30` (1-Bucket-pro-Tag, days clamped 1..90, `by_kind`-Aufgliederung pro Bucket, plus aggregierte `totals`). Helper-Funktionen `_q11_default_baseline_iso` / `_q11_read_baseline` / `_q11_write_baseline` / `_q11_costs_since` / `_q11_timeline`. Korrupte Baseline-Datei → `logger.warning("[Q-11] …")` + Fallback auf Tagesanfang.
+
+4. **Frontend Q-11-Card** — [`zerberus/app/templates/hel/hel.html`](../zerberus/app/templates/hel/hel.html) zeigt `#q11CostTrackingCard` direkt unter der Balance-Card mit Live-USD/EUR seit Reset, "Letzter Reset"-Timestamp, Reset-Button, 7/30-Day-Toggle und Chart.js-Linien-Diagramm (`#q11CostChart`, by_kind farbig gestapelt). Logik in [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js): `q11LoadCostTracking()` ruft beide Endpoints und baut das Chart.js-Dataset, `q11ResetCostBaseline()` POSTet `/reset`, `q11SetTimelineDays(7|30)` togglet die Aufloesung. Auto-Load 700ms nach `DOMContentLoaded`.
+
+**Tests:** Neue Datei [`zerberus/tests/test_q11_cost_tracking.py`](../zerberus/tests/test_q11_cost_tracking.py) mit 24 Tests in 8 Bloecken — `TestCostModelSchema` (3), `TestLLMGenerationIdCapture` (2), `TestQ11ResetBaseline` (4), `TestSinceResetEndpoint` (3), `TestResetEndpoint` (1), `TestTimelineEndpoint` (3), `TestQ11Migration` (1 — verifiziert die `_has_column`-Idempotenz-Guards via Source-Inspektion, nicht via Direkt-Import-Run, weil `from alembic import op` einen Runtime-Kontext braucht), `TestQ11SourceWiring` (6). Plus 33 Regressions (15 Q-10 + 8 cost_display + 10 hel-js-integrity) gruen = 57/57 zusammen.
+
+**Code-Aenderungen:** [`alembic/versions/c4a91b7e2d8f_q11_costs_generation_id_caller_kind.py`](../alembic/versions/c4a91b7e2d8f_q11_costs_generation_id_caller_kind.py) (neu), [`zerberus/core/database.py`](../zerberus/core/database.py) (Cost-Model + save_cost-Signatur), [`zerberus/core/llm.py`](../zerberus/core/llm.py) (data.id-Capture + caller_kind-Parameter), [`zerberus/app/routers/hel.py`](../zerberus/app/routers/hel.py) (3 neue Endpoints + Helper), [`zerberus/app/templates/hel/hel.html`](../zerberus/app/templates/hel/hel.html) (Q-11-Card), [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js) (Q-11-Logik), [`zerberus/tests/test_q11_cost_tracking.py`](../zerberus/tests/test_q11_cost_tracking.py) (neu, 24 Tests). Auto-Restart-Hook (`scripts/deploy_to_live.ps1`) triggert wegen `zerberus/**`-Touch.
+
+**Was Chris noch tun muss:** beim ersten Start einmal `alembic upgrade head` ausfuehren (oder `init_db()` ruft `Base.metadata.create_all` und legt die Spalten ueber das Model-Schema an — fuer den Produktiv-Pfad ist der Standalone-Migration-Run trotzdem empfehlenswert, damit `alembic_version`-Tabelle synchron bleibt). Optional: Supervisor / Subagent / Orchestrator-Pfade auf `caller_kind=` umstellen, sobald diese Pfade existieren — aktuell sind alle Calls implizit `caller_kind='main'` (Default).
+
+**Q-11-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #5`. FR `STATUS: IN_ARBEIT` bleibt, Q-12 (CodeCat-Header Live-Update — Modell-Label statisch `deepseek/v3.2`, CTX-Anzeige statisch `CTX 0%` an echte Laufzeit-Werte haengen) als Naechstes in Tier 2.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
