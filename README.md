@@ -1,8 +1,8 @@
 # Zerberus / Nala – Dein persönlicher KI-Assistent
 
 <!-- STAND-ANKER:START -->
-**Stand:** FR 2026-05-25 Rosa-Readiness Sessions 1-16 (E-02 ERLEDIGT) - Phase 5b (Rosa-Readiness) - 2026-05-30 - 4733 Tests
-**Commits:** Zerberus `68ee6d6` - Ratatoskr `ffa7a0e` - Claude `e7b6fe1`
+**Stand:** FR 2026-05-25 Rosa-Readiness Sessions 1-17 ABGESCHLOSSEN (E-03 ERLEDIGT) - Phase 5b (Rosa-Readiness MARATHON FERTIG) - 2026-05-30 - 4779 Tests
+**Commits:** Zerberus `f319b96` - Ratatoskr `ffa7a0e` - Claude `e7b6fe1`
 _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py._
 <!-- STAND-ANKER:END -->
 
