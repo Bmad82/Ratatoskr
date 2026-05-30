@@ -1547,6 +1547,31 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-01 Root-Cleanup (Tier 1, Session #2, STATUS: IN_ARBEIT)
+
+**Auftrag:** Erstes Item der Master-Queue. Festplatten-Root von Zerberus aufraeumen — Streufeuer in `archive/`-Baum verschieben (nicht loeschen — Kintsugi), Code-relevante Items unangetastet, unklare Faelle in `docs/CLEANUP_DOSSIER.md` dokumentieren.
+
+**Verfahren:** Pro Verschiebungs-Kandidat `Grep` ueber den ganzen Repo, ob aktive Code-/Test-/Workflow-Referenzen bestehen (Lesson R-INV-2 — keine Annahmen). Bei reinen Doku-Selbstreferenzen → verschieben. Bei Code-Referenzen → zurueckhalten + in CLEANUP_DOSSIER. Tracked Files via `git mv` (Historie bleibt), untracked via `mv`.
+
+**Verschoben in `archive/`:**
+- 8x `FEATURE_REQUEST_*_ERLEDIGT.md` (CODECAT_INVENTUR, DEPLOY, (Master), PATH, RESTART, ROSA_READINESS, SLUGROT, SYSTEMTAB_BUGFIX) → `archive/feature_requests/`. E-02-Marker-Test (`test_fr_2026_05_25_…py:482`) defensiv via `if p.exists()` — bleibt gruen (lessons enthaelt FR_MARKER); 9/9 marker-Tests gruen post-move.
+- `config.json.bak_patch112` → `archive/configs/` (`git mv`).
+- `rag_eval_results.txt` (1 MB, alter Eval-Output, regenerierbar) → `archive/rag_eval/` (`git mv`).
+- `server_restart.log` (524 KB, untracked `*.log`) → `archive/logs/`.
+- `rag_eval_run_patch114b.log`, `rag_eval_run_patch118b.log` (untracked) → `archive/rag_eval/`.
+- `backup_p69/` (1 Datei: `nala_pre_p69.py`, untracked via `backup_p*/`) → `archive/backup_p69/`.
+
+**Bewusst NICHT verschoben:**
+- `rag_eval_questions.txt` — FR markierte als eindeutig, aber `rag_eval.py:31` liest sie als `Path("rag_eval_questions.txt")`. Verschiebung wuerde Tool brechen. → Kategorie B im CLEANUP_DOSSIER (Chris entscheidet: Tool deprecated vs. aktiv).
+- 5 dicke `ZERBERUS_*.md` aus FR-Liste (Design_Documentation 299 KB etc.) — existieren im aktuellen Root NICHT (mehr); FR-Liste hier veraltet. Andere dicke Archiv-Files (`SUPERVISOR_ZERBERUS_ARCHIV_2026-05-21.md` 468 KB, `lessons_ZERBERUS_KONTEXT.md` 317 KB, `CLAUDE_ZERBERUS_ARCHIV.md` 135 KB) als Kategorie C im CLEANUP_DOSSIER (Chris-Entscheidung).
+- `start.bat` vs `start_stable.bat`, `code_dossier.py` vs `code_dossier-1.py`, `Code Cat Wireframes.html` — alle in Kategorie C dokumentiert mit Empfehlung.
+
+**Output:** `docs/CLEANUP_DOSSIER.md` mit Kategorien A (verschoben, 14 Items), B (1 Code-Konflikt, Chris-Entscheid), C (4 FR-"erst greppen"-Items mit Empfehlung), D (16+ weitere veraltete Files als Hinweis-Liste fuer zukuenftiges Q-01b).
+
+**Q-01-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #2` (Coda-Anteil komplett, Chris-Restentscheidungen offen). FR `STATUS: IN_ARBEIT` bleibt, Q-02..Q-56 weiter offen.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
