@@ -34,8 +34,8 @@ Alles was Coda testen kann → Coda testet. Vor jedem „Chris muss noch testen"
 ### 5. Pflicht nach jedem Patch
 SUPERVISOR_ZERBERUS.md aktualisieren (Nr | Datum | 3-5 Zeilen). Offene Items pflegen. PROJEKTDOKUMENTATION.md anhaengen (Patch-Nr+Titel | Datum | Was | Dateien | Teststand). [`docs/huginn_kennt_zerberus.md`](docs/huginn_kennt_zerberus.md) bei neuen Features/Endpoints/Architektur aktualisieren — **KEIN automatischer RAG-Upload mehr** (FR 2026-05-22): Datei bleibt im Repo, Chris laedt sie bei Bedarf manuell ueber Hel hoch. Detail: [`playbooks/rag_pipeline.md`](playbooks/rag_pipeline.md).
 
-### 6. Repo-Sync (Pflicht-Letztschritt)
-Nach `git push`: `sync_repos.ps1` DANN `scripts/verify_sync.ps1` — beide Pflicht. Bei ❌ Exit 1: NICHT weitermachen, Sync-Problem loesen. Patch gilt erst bei ✅ Exit 0 als abgeschlossen. Detail: [`playbooks/observability.md`](playbooks/observability.md).
+### 6. Repo-Sync + Live-Deploy (Pflicht-Letztschritt)
+Nach `git push`: `sync_repos.ps1` DANN `scripts/verify_sync.ps1` DANN `scripts/verify_live_deploy.ps1` — alle drei Pflicht. `sync_repos.ps1` ruft intern `scripts/deploy_to_live.ps1` auf, der den Live-Server-Pfad (`C:\Users\chris\Python\Rosa\Nala_Rosa\Zerberus`) per `git pull --ff-only` synchronisiert UND bei requirements.txt-Diff `pip install` in das Live-`venv` laeuft. `verify_live_deploy.ps1` ist der finale Beweis: Live-HEAD == Remote-HEAD. Bei ❌ Exit 1 von einem der drei: NICHT weitermachen, Sync-Problem loesen. Patch gilt erst bei ✅ Exit 0 von ALLEN drei als abgeschlossen. **FR 2026-05-30 DEPLOY-01:** B-076 (Code-Cat-Deployment) hatte den Auto-Sync-Mechanismus als Akzeptanzkriterium, aber der Default-Pfad im Skript zeigte 17 Sessions lang auf den Arbeits-Pfad — kein Pull lief je auf dem Live-Server. Default ist jetzt korrekt; Fallback ist `scripts/install_auto_deploy_task.ps1` (Scheduled Task alle 10 min). **Chris terminalisiert NICHTS — keinen `git pull`, keinen `pip install`, NICHTS.** Detail: [`playbooks/observability.md`](playbooks/observability.md).
 
 ## Marathon-Workflow (Phase 5+)
 

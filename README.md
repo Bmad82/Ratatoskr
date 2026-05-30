@@ -1,8 +1,8 @@
 # Zerberus / Nala – Dein persönlicher KI-Assistent
 
 <!-- STAND-ANKER:START -->
-**Stand:** FR 2026-05-25 Rosa-Readiness Sessions 1-17 ABGESCHLOSSEN (E-03 ERLEDIGT) - Phase 5b (Rosa-Readiness MARATHON FERTIG) - 2026-05-30 - 4779 Tests
-**Commits:** Zerberus `f319b96` - Ratatoskr `ffa7a0e` - Claude `e7b6fe1`
+**Stand:** FR 2026-05-30 OpenRouter-Slug-Rot Fix (BUG-A mistral-small-3.2 + BUG-B qwen3-vl-8b + FIX-C 404-retryable + Startup-Slug-WARN) - Phase 5b (Live-Bug-Hotfix) - 2026-05-30 - 4810 Tests
+**Commits:** Zerberus `52c553b` - Ratatoskr `ffa7a0e` - Claude `e7b6fe1`
 _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py._
 <!-- STAND-ANKER:END -->
 
