@@ -1,8 +1,8 @@
 # SUPERVISOR_ZERBERUS.md – Zerberus Pro 4.0
 
 <!-- STAND-ANKER:START -->
-**Stand:** FR 2026-05-25 Rosa-Readiness Sessions 1-15 (E-01 ERLEDIGT) - Phase 5b (Rosa-Readiness) - 2026-05-30 - 4685 Tests
-**Commits:** Zerberus `684e077` - Ratatoskr `6bf7936` - Claude `9a47b1d`
+**Stand:** FR 2026-05-25 Rosa-Readiness Sessions 1-16 (E-02 ERLEDIGT) - Phase 5b (Rosa-Readiness) - 2026-05-30 - 4733 Tests
+**Commits:** Zerberus `68ee6d6` - Ratatoskr `ffa7a0e` - Claude `e7b6fe1`
 _Single Source of Truth: STAND.json - propagiert von scripts/propagate_stand.py._
 <!-- STAND-ANKER:END -->
 
