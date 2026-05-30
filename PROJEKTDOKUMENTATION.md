@@ -1517,6 +1517,34 @@ python -m spacy download de_core_news_sm
 - `docs/PROJEKTDOKUMENTATION.md`: Pacemaker-Abschnitt (4.5) mit neuen Werten, neue Endpunkte in Hel-Router (4.3), Patch 56 in Patch-Historie, Roadmap aktualisiert
 - `CLAUDE.md`: RAG-Upload-Endpunkt und Pacemaker-Konfigurationshinweis ergänzt
 
+### FR 2026-05-30 Master-Roadmap — Block-B-HOTFIX (P0, Session #1b, STATUS: IN_ARBEIT)
+
+**Problem (Live-Log 2026-05-30 22:10:13):** Trotz des Block-B-Fix aus Session #1 (`sentiment = None` fuer `role == "whisper_input"` in `store_interaction`) lieferte `/v1/audio/transcriptions` HTTP 500 und Server-Log zeigte `[Sentiment] Lade german-sentiment-bert (device=cuda)` direkt nach dem Whisper-Transkript. Dictate-Tastatur (~75 % von Chris' Eingaben) komplett down.
+
+**Root-Cause:** Drei voneinander unabhaengige Folgefehler im urspruenglichen Block-B-Patch:
+1. **TypeError-Crash:** Log-Zeile am Funktionsende formatierte `f"{sentiment:.2f}"` und crashte mit `None:.2f` → `TypeError: unsupported format string passed to NoneType.__format__`.
+2. **BERT-Hintertuer:** `compute_metrics(content)` ruft intern `_compute_sentiment(text)` (`database.py:775`) → `analyze_sentiment` → BERT lazy-load. Der Skip-Branch verhinderte nur den DIREKTEN Aufruf am Funktionsanfang.
+3. **Falsches Test-Gruen:** Die 6 Block-B-Tests warfen Sentinel-Exception (`_StopAfterSentiment`) VOR der Log-Zeile + `compute_metrics`-Branch. Sie bewiesen "Skip-Zeile existiert", nicht "Funktion laeuft sauber durch".
+
+**Fix:**
+- **`zerberus/core/database.py:650-654`** — None-safe Log-Zeile: `sentiment_str = f"{sentiment:.2f}" if sentiment is not None else "–"`; Log nutzt `sentiment_str`.
+- **`zerberus/core/database.py:640-649`** — Zweite Skip-Branch: `if role != "whisper_input": metrics = compute_metrics(content); await save_metrics(...)`. Whisper-Rohausgabe ist Diagnose-Logging; lexikalische Metriken machen darauf eh keinen Sinn.
+- **Audit aller `sentiment`-Konsumenten in `store_interaction`** — DB-Schema (`Interaction.sentiment = Column(Float, nullable=True)`) erlaubt NULL; Dedup-Guard greift nur fuer user/assistant; keine `return`-Konsumenten. Kein weiterer Fix noetig.
+
+**Tests:** 6 neue Tests in `zerberus/tests/test_fr_2026_05_30_block_b_whisper_input_sentiment_skip.py`:
+- **`TestBlockBHotfixEndToEnd`** (3 Tests) — laufen mit ECHTER `sqlite+aiosqlite`-In-Memory-Session (Pattern aus `test_db_dedup.py:tmp_db`), OHNE Sentinel-Exception, bis ans Funktionsende: kein Crash, Spy.call_count == 0 (kein BERT-Load, weder direkt noch via `compute_metrics`), Row mit `sentiment=None` + `word_count=4` in DB, keine `message_metrics`-Row fuer whisper_input, Anti-Drift `role="user"` schreibt 1 Metrics-Row + triggert analyze_sentiment.
+- **`TestBlockBHotfixSourceMarker`** (3 Tests) — Source-Audit: `BLOCK-B-HOTFIX`-Marker im Source, None-safe Log-Pattern (`sentiment_str = f"{sentiment:.2f}" if sentiment is not None else ...`), `if role != "whisper_input":\s*\n\s*metrics = compute_metrics\(content\)`-Regex verankert.
+
+Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen weiter als Branch-Verifikation). Block-B-Suite jetzt 12/12 gruen. Anti-Regress: Block-A-Suite (6), B-075-Suite (21), db_helpers (20), db_dedup (9) — alle gruen, 56/56 ueber die relevanten Suites. Voll-Suite-Stand ~4828 (geschaetzt, +6 ggue. Session #1).
+
+**Kintsugi-Doku-Korrektur:**
+- `lessons_ZERBERUS.md` — neue Lesson am Anfang: *"Skip-Fixes muessen bis ans Funktionsende getestet werden — Short-Circuit-Tests via Sentinel-Exception geben falsches Gruen."* Alte `B-075-Backdoor`-Lesson bleibt mit `[KORRIGIERT 2026-05-30 BLOCK-B-HOTFIX]`-Marker und Querverweis.
+- `HANDOVER_ZERBERUS.md` — Sammel-Session-Record fuer den Hotfix.
+- `MARATHON_WORKFLOW_ZERBERUS.md` — unveraendert (Master-Queue bleibt offen).
+- `FEATURE_REQUEST_ZERBERUS.md` BLEIBT (STATUS=IN_ARBEIT, Master-Queue noch komplett offen).
+
+**Lesson (generalisierbar):** bei JEDEM Skip-Patch (Variable auf None/Default fuer Sub-Pfad) IMMER (a) Variable von Zuweisung bis Funktionsende `Grep`-auditen, jede Konsumenten-Stelle absichern, (b) BEIDE Test-Typen schreiben: Short-Circuit mit Sentinel (Branch-Verifikation) PLUS End-to-End mit echter In-Memory-DB (laeuft bis zum letzten `await`), (c) bei Log-Zeilen mit Format-Strings auf nullable Werten: None-safe Format PLUS Test der explizit None durch die Log-Zeile schickt, (d) pruefen ob der gleiche teure Helper INDIREKT ueber andere Funktionen aufgerufen wird (Caller-Graph + Callee-Graph).
+
 ---
 
 ## 8. Aktueller Projektstatus
