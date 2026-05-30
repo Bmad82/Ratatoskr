@@ -1608,6 +1608,26 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-10 Hel-Kontostand-Fix (Tier 2, Session #4, STATUS: IN_ARBEIT)
+
+**Auftrag:** Erstes Tier-2-Item der Master-Queue und erstes CodeCat-Folge-Item aus `CODECAT_INVENTUR.md` Block D-2. Befund vom Inventur-Lauf: `/hel/admin/balance` rief `https://openrouter.ai/api/v1/credits` mit dem normalen Inference-Key (`OPENROUTER_API_KEY`) auf — der Endpoint erfordert aber den Provisioning/Management-Key. Bei Pre-paid-Accounts ohne `limit_usd` auf `/api/v1/auth/key` blieb der Kontostand leer und ein `except: pass`-Block (Block D-3 Silent-Except) schluckte den 401/403, so dass das Hel-UI keine Erklaerung lieferte.
+
+**Fix (drei Aenderungen, alle unter `zerberus/**`):**
+
+1. **Neues Env-Var `OPENROUTER_MANAGEMENT_KEY`** in [`zerberus/app/routers/hel.py`](zerberus/app/routers/hel.py) — wird ausschliesslich fuer den `/api/v1/credits`-Fallback verwendet. Wenn `limit_usd` aus `/api/v1/auth/key` vorhanden ist, bleibt der bisherige Pfad unveraendert (Backward-Compat zu Patch 136).
+2. **Silent-Except eliminiert** — der frueher stumme `except: pass`-Block ist durch explizites `logger.warning("[Q-10] ...")` ersetzt (`httpx.HTTPStatusError` fuer 401/403 + generic `Exception` als letztes Netz). Das erfuellt CODECAT-Inventur Block D-3 und Lesson #22 (Pipeline-Exception-Hierarchie — keine stummen Excepts in Diagnose-Pfaden).
+3. **Neue Response-Felder `balance_source` + `balance_hint`** — die 7 moeglichen `balance_source`-Werte (`auth_key_limit`, `management_credits`, `missing_management_key`, `management_credits_failed`, `auth_key_failed`, `disabled`, `unknown`) geben dem Hel-UI praezise Diagnose-Info. `balance_hint` enthaelt einen Klartext-Hinweis (z. B. *"Pre-paid-Account (kein limit_usd) und kein OPENROUTER_MANAGEMENT_KEY gesetzt — Kontostand nicht abrufbar."*). UI-Rendering in [`zerberus/static/js/hel-main.js`](zerberus/static/js/hel-main.js) mit HTML-Escaping (`&`, `<`, `>` -> Entities).
+
+**Tests:** Neue Datei [`zerberus/tests/test_q10_management_key.py`](zerberus/tests/test_q10_management_key.py) mit 15 Tests in 6 Klassen — `TestBalanceSourceAuthKeyLimit` (1), `TestBalanceSourceMissingManagementKey` (2), `TestBalanceSourceManagementCredits` (3), `TestBackwardCompatPatch136Fields` (2), `TestSourceWiring` (5), `TestQ10InlineMarker` (2). Da das Projekt `respx` nicht im Test-Stack hat, baut die Datei einen eigenen `_FakeAsyncClient`-Mock per `monkeypatch.setattr(hel_mod.httpx, "AsyncClient", _factory)`. Vollsuite: 15/15 neue Q-10-Tests gruen, kombiniert mit den 8 vorhandenen `test_hel_kosten`-Tests = 23/23. Drei pre-existierende Failures in `test_hel_kleinigkeiten.py::test_slider_range` und `test_p_ui_9_two_axis_scaling.py::TestSourceWiringJSHelpers` sind unveraendert (verifiziert via `git stash` — kein Q-10-Regress).
+
+**Code-Aenderungen:** [`zerberus/app/routers/hel.py:395-566`](zerberus/app/routers/hel.py:395) (Balance-Endpoint umgebaut), [`zerberus/static/js/hel-main.js:600-615`](zerberus/static/js/hel-main.js:600) (Hint-Rendering), [`zerberus/tests/test_q10_management_key.py`](zerberus/tests/test_q10_management_key.py) (neu, 15 Tests). Auto-Restart-Hook (`scripts/deploy_to_live.ps1`) triggert wegen `zerberus/**`-Touch.
+
+**Was Chris noch tun muss:** `OPENROUTER_MANAGEMENT_KEY` in der `.env` setzen (Provisioning-Key aus OpenRouter Dashboard -> Keys -> "Create Provisioning Key"). Bis dahin zeigt das Hel-UI den `balance_hint` mit dem Klartext-Hinweis statt eines leeren Kontostandes.
+
+**Q-10-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #4`. FR `STATUS: IN_ARBEIT` bleibt, Q-11 (Hel-/CodeCat-Kosten + Diagramm) als Naechstes in Tier 2.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
