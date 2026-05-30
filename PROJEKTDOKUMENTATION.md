@@ -1652,6 +1652,34 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-12 CodeCat-Header Live-Update (Tier 2, Session #6, STATUS: IN_ARBEIT)
+
+**Auftrag:** Drittes Tier-2-Item und drittes CodeCat-Folge-Item aus `CODECAT_INVENTUR.md` Block B. Befund: (a) Das Modell-Label im CodeCat-Header (oben rechts, Pille) stand statisch auf `deepseek/v3.2` — auch wenn die Reasoning-Router-Heuristik (P-UI-11) auf `deepseek/r1` umschaltete oder ein Fallback-Backend antwortete. (b) Die `CTX`-Prozent-Anzeige war auf `CTX 0%` hardcodiert — kein echter Wert war verkabelt. Beide an echte Laufzeit-Werte gehaengt, ohne neue Endpoints zu erfinden (`/v1/llm/backends` existiert bereits, OpenAI-kompatibler Response-Header-Pfad existiert bereits aus P-UI-7).
+
+**Fix (vier Komponenten):**
+
+1. **Backend-Registry mit `context_window`** — [`zerberus/core/backend_registry.py`](../zerberus/core/backend_registry.py) bekommt ein neues `BackendDef.context_window: int = 0`-Feld. `from_dicts(...)` parsed `context_window` tolerant aus Config-Dicts (None / String / Negativ → 0, integer-cast mit try/except). `DEFAULT_BACKENDS` setzt die Werte aus den OpenRouter-Model-Specs: `deepseek-primary=65536`, `llama-fallback=131072`, `mistral-small=131072`. `0` ist die ehrliche „unbekannt"-Sentinel (Frontend rendert `CTX ?` statt eine berechnete Luge).
+
+2. **`/v1/llm/backends` spiegelt `context_window`** — [`zerberus/app/routers/system_router.py:117`](../zerberus/app/routers/system_router.py) traegt `context_window` pro Backend ins Response-Dict ein (im selben dict-comp wie `cost_in_per_mtok` etc.). Der Endpoint-Docstring dokumentiert die Schema-Erweiterung samt Q-12-Begruendung. Page-Load-Pfad: das Frontend kennt schon vor dem ersten Chat-Call die Kontextfenstergroesse des Default-Backends.
+
+3. **`chat_pipeline.py` spiegelt Tokens + Window als Response-Header** — [`zerberus/core/chat_pipeline.py`](../zerberus/core/chat_pipeline.py) capturet `p_tok, c_tok` aus allen drei `llm_service.call(...)`-Branches (Orchestrator-Main, Orchestrator-Fallback, no-Orchestrator-Fallback) statt sie als `_, _,` zu verwerfen. Nach `_backend_used` werden im X-LLM-Header-Spiegel-Block drei neue Header gesetzt: `X-LLM-Context-Window`, `X-LLM-Prompt-Tokens`, `X-LLM-Completion-Tokens` — analog zum P-UI-7-Pattern fuer `X-LLM-Backend`/`Tier`/`Model`/`Reason`/`Step`. OpenAI-API-kompatibel: Response-Body bleibt unveraendert, alles laeuft ueber Header (Frontend liest sie vor `r.json()`).
+
+4. **Frontend [`zerberus/static/code_cat.html`](../zerberus/static/code_cat.html)** — State um drei Felder erweitert: `currentModel: 'deepseek/v3.2'` (Initialwert), `contextWindow: 0`, `ctxTokens: 0`. Drei neue Helper: `updateModelLabel(model)` rendert die Modell-Pille, `updateCtxDisplay()` zeigt `CTX —` (Initial, kein Call gelaufen) / `CTX ?` (Window unbekannt) / `CTX N%` (berechnet aus `(p_tok+c_tok)/contextWindow*100`). `loadInitialHeaderState()` fetcht `/v1/llm/backends`, sucht `default_primary` und setzt Initial-Modell + Window. In `submitTask()` werden die vier Header (`X-LLM-Model`, `X-LLM-Context-Window`, `X-LLM-Prompt-Tokens`, `X-LLM-Completion-Tokens`) VOR `r.json()` gelesen — `r.headers.get('X-LLM-Model')` muss aufgerufen werden, bevor der Body konsumiert wird, sonst sind die Header weg. `newTask()` resetet `ctxTokens` (nicht `contextWindow` — das bleibt fuer das aktuelle Backend stabil). Bootstrap-Call `loadInitialHeaderState()` nach `setupSSE()`.
+
+**Tests:** Neue Datei [`zerberus/tests/test_q12_codecat_header.py`](../zerberus/tests/test_q12_codecat_header.py) mit 28 Tests in 7 Klassen — `TestBackendDefContextWindow` (4 — Feld-Existenz, Wert-Akzeptanz, Default-Werte ≠ 0, Spec-Werte), `TestFromDictsContextWindow` (3 — Read, Default-bei-Fehlen, Tolerance bei Invalid), `TestLLMBackendsEndpointSchema` (2 — Response-Schema, Default-Primary-Window), `TestChatPipelineQ12Headers` (6 — drei Header-Asserts plus All-Three-Branches-Capture + p_tok/c_tok-Default + Q12-Marker), `TestCodeCatHtmlWiring` (10 — drei Funktionen, Bootstrap-Hook, Endpoint-Fetch, Header-Read in submitTask, State-Felder, CTX-?-Branch, newTask-Reset, Q12-Marker), `TestSystemRouterWiring` (2 — Schema-Carry + Q12-Marker), `TestBackendRegistryWiring` (1 — Doc-Carry). Plus 47 Regressions (24 Q-11 + 15 Q-10 + 8 cost_display) gruen = 75/75. Voll-Suite-Stand: 4872 passed / 36 pre-existing failures — identisch zum Q-11-Baseline-Lauf nach `git stash` (Q-12 introduces zero regression).
+
+**Architektur-Entscheidung — Header statt Body:** Q-12 nutzt HTTP-Response-Header (`X-LLM-Context-Window` etc.) statt JSON-Body-Felder, weil der `/v1/chat/completions`-Endpoint OpenAI-kompatibel bleiben muss. Der bestehende P-UI-7-Header-Spiegel-Block in `chat_pipeline.py` ist die etablierte Stelle fuer "Meta-Daten, die das Frontend braucht, aber die OpenAI-Schema nicht kennt". Vier Header-Adds statt Body-Schema-Erweiterung minimieren das Diff und vermeiden Breaking-Changes fuer externe API-Clients.
+
+**Architektur-Entscheidung — CTX `?` statt Luge:** Wenn `context_window=0` (kein Default-Wert, P-UI-11-Reasoning-Override auf unbekanntes Modell, Custom-Config-Backend ohne Window-Eintrag), zeigt das Frontend `CTX ?` und NICHT eine berechnete Approximation. Der Nutzer sieht ehrlich, dass die Info fehlt, statt einer falschen Sicherheit zu folgen. (Kintsugi-Prinzip: Defekte sichtbar machen, nicht verstecken.)
+
+**Code-Aenderungen:** [`zerberus/core/backend_registry.py`](../zerberus/core/backend_registry.py) (context_window-Feld + tolerant parser + Default-Werte), [`zerberus/app/routers/system_router.py`](../zerberus/app/routers/system_router.py) (Schema-Erweiterung im Response-Dict), [`zerberus/core/chat_pipeline.py`](../zerberus/core/chat_pipeline.py) (p_tok/c_tok-Capture in drei Branches + drei neue Response-Header), [`zerberus/static/code_cat.html`](../zerberus/static/code_cat.html) (State + drei Funktionen + Bootstrap-Hook + Header-Read), [`zerberus/tests/test_q12_codecat_header.py`](../zerberus/tests/test_q12_codecat_header.py) (neu, 28 Tests). Keine DB-Migration, keine neuen Endpoints. Auto-Restart-Hook (`scripts/deploy_to_live.ps1`) triggert wegen `zerberus/**`-Touch.
+
+**Was Chris noch tun muss:** nichts ausser Browser-Hard-Reload (Ctrl+Shift+R) im CodeCat-Tab, damit das gecachete alte HTML weichen kann. Smoke-Test: erster Chat-Call → Modell-Pille zeigt das tatsaechliche Modell (z.B. `deepseek/v3.2` bei Low-Effort, `deepseek/r1` bei High-Effort via P-UI-11) und `CTX N%` rendert mit echtem Wert. Bei Custom-Backend ohne `context_window` in der `config.yaml` rendert `CTX ?` (erwartet, ehrlich).
+
+**Q-12-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #6`. FR `STATUS: IN_ARBEIT` bleibt, Q-13 (HITL-Veto-Toggle fuer CodeCat) als Naechstes in Tier 2.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
