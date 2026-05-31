@@ -1951,6 +1951,20 @@ Echte In-Memory-Async-SQLite (Fixture-Pattern aus der Block-B-Suite), laeuft `st
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-38 B-060 Whisper Sentence-Repetition (Tier 4, Session #16, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-38** (`B-060 / W-001 Sentence-Repetition-Bug (Whisper)`, SUPERVISOR Item 13). Tier 4 siebtes Item nach Q-35. Whisper produziert bei Stille/Endlosschleifen wiederholte Saetze und Phrasen, die das Transkript zumuellen.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** Die Wiederholungs-Erkennung ist **laengst vollstaendig implementiert** in [`zerberus/core/cleaner.py`](../zerberus/core/cleaner.py): `detect_phrase_repetition` (Patch 102 — kurze N-Gramm-Loops), `detect_sentence_repetition` (Patch 113b — konsekutive Satz-Dopplungen via Interpunktions-Split), `detect_long_subsequence_repetition` (Patch 120 — lange zusammenhaengende Loops ohne Interpunktion via Perioden-Suche). Alle drei sind im Produktions-Einstiegspunkt `clean_transcript` verdrahtet (hinter `if enabled:`, Reihenfolge Mikro→Makro).
+
+**Was fehlte (die eigentliche Q-38-Arbeit):** Die drei Filter waren in [`test_cleaner.py`](../zerberus/tests/test_cleaner.py) jeweils ISOLIERT getestet (27 Tests), aber KEIN Test belegte, dass der reale Einstiegspunkt `clean_transcript()` sie tatsaechlich aufruft. Ein Refactor, der einen Filter aus `clean_transcript` herausloest, waere gruen geblieben und der Whisper-Wiederholungs-Bug regressiert still in Produktion. Reine Coverage-Schuld (wie Q-32/Q-33/Q-34), kein Code-Fix — Lesson #Q33-verify-is-coverage-debt (dritte Instanz) / #Q32-test-the-full-sequence.
+
+**Umsetzung:** 11 Tests in [`zerberus/tests/test_q38_b060_sentence_repetition_pipeline.py`](../zerberus/tests/test_q38_b060_sentence_repetition_pipeline.py): **TestCleanTranscriptRepetitionEndToEnd** (5 — konsekutive Satz-Wiederholung entfernt, lange Subsequenz ohne Interpunktion entfernt, Phrasen-Loop entfernt, normaler Text unveraendert / kein False-Positive, nicht-konsekutiver Refrain bleibt erhalten; CWD auf Repo-Root fuer echte `whisper_cleaner.json`/`fuzzy_dictionary.json`) + **TestCleanTranscriptWiringSourceAudit** (6 — alle drei Filter in `clean_transcript` aufgerufen, Reihenfolge Mikro→Makro via Source-Index, Filter hinter `enabled`-Gate). 11/11 gruen; Anti-Drift test_cleaner+test_p219 32/32 gruen (gesamt 43/43). Kein `zerberus/**`-Code-Touch ausser Testdatei → kein Auto-Restart-Hook.
+
+**Q-38-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #16`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 16/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 7/~10**). Naechste Session: Tier 4 Restbestand erschoepft sich — Q-36 (B-033 `:active`-Mobile-Audit) ggf. physisch-Test bei Chris; Q-37 (B-010 FAISS-Migration) BLOCKIERT auf Chris-`--execute`. Danach Tier 5 (Power-Features, Spec-First).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
