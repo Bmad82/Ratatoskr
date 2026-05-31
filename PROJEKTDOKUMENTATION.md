@@ -1916,6 +1916,41 @@ Echte In-Memory-Async-SQLite (Fixture-Pattern aus der Block-B-Suite), laeuft `st
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-35 B-035 Hel-Metriken Glaettungs-Toggle (Rolling Average) (Tier 4, Session #15, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-35** (`B-035 Hel-Metriken-Tab Glaettungs-Toggle (Rolling Average)`). Tier 4 sechstes Item nach Q-34. Die Metrik-Kurven (Shannon Entropy, Ø Wortlaenge, BERT Sentiment, TTR, Hapax Ratio) sind durch kurze Whisper-Chunks extrem zackig — einzelne Saetze erzeugen Vollausschlaege, die den Gesamttrend unsichtbar machen.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** KEIN bestehender clientseitiger Glaettungs-Toggle (kein `rolling`/`smooth`/`N=10` im Frontend). Q-31 (B-021) glaettete den BERT-Sentiment-**Wert** serverseitig (Verteilung statt Argmax) — das ist ein anderer Belang als die hier geforderte clientseitige Darstellungs-Glaettung der Chart-Kurven. B-035 war also ein **echter Code-Auftrag** (anders als Q-33/Q-34, die reine Coverage-Schuld waren).
+
+**Umsetzung (rein clientseitig, KEINE Backend-Aenderung):**
+
+- **`rollingAverage(values, n)`** in [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js) — gleitender Mittelwert ueber ein nachlaufendes Fenster von `n` Punkten. Luecken (`null`/`undefined`/`NaN`) werden im Fenster uebersprungen (NICHT als 0 eingerechnet), damit echte Datenluecken die Kurve nicht faelschlich nach unten ziehen und `spanGaps` weiter greift. Laenge bleibt erhalten (1 Ausgabewert pro Eingabepunkt → Labels/Daten deckungsgleich).
+- **State `_smoothingN`** (Default `0` = Raw). In `buildChart` werden die Datasets bei `_smoothingN > 0` durch den Rolling Average ersetzt — nur fuer die Darstellung, `data`/`_chartHistory` bleiben unangetastet.
+- **Klick-Handler `.smooth-chip`** (in `DOMContentLoaded`, analog zum `.time-chip`-Handler) setzt `_smoothingN` aus `data-n` und ruft `rebuildChart()` aus dem gecachten `_chartHistory` — **KEIN** Server-Refetch.
+- **Button-Gruppe Raw/Ø10/Ø20/Ø50** (`.metric-smoothing`) in [`zerberus/app/templates/hel/hel.html`](../zerberus/app/templates/hel/hel.html), `.smooth-chip`-CSS (analog `.time-chip`) in [`zerberus/static/css/hel.css`](../zerberus/static/css/hel.css).
+- **Datentabelle bleibt Roh:** `loadMetrics` fuettert die Tabelle aus `/hel/metrics/latest_with_costs` und ist von der Glaettung unberuehrt (Test sichert es ab). Rohdaten in der DB unveraendert.
+
+**Tests:** 12 Tests in [`zerberus/tests/test_q35_b035_metrics_smoothing_toggle.py`](../zerberus/tests/test_q35_b035_metrics_smoothing_toggle.py), 2 Ebenen:
+
+- `TestRollingAverageBehavior` (6, **behavioral**): die EXAKTE `rollingAverage`-Funktion wird aus `hel-main.js` extrahiert und via `node` mit echten Eingaben gerechnet (Lesson #Q32-test-the-full-sequence) — Identity bei n≤1, Trailing-Window-Mittel, Spike-Daempfung (`[10,0,0,0]`→geglaettet), null-skip, all-null-Fenster bleibt null, Laenge erhalten. Faengt Off-by-one-/Null-/Mittelwert-Fehler, die ein Source-Audit nicht sieht.
+- `TestSmoothingToggleWiring` (6, **Source-Audit**): HTML-Chips (Raw-Default + N=10/20/50), CSS, State-Default Raw, `buildChart`-Anwendung, Handler ohne Refetch, Datentabelle roh.
+
+**12/12 gruen.** Anti-Drift: Chart-Timeline + Q-31 zusammen **25/25 gruen**, `node --check hel-main.js` OK.
+
+**Auto-Restart-Hook:** Code-Aenderung unter `zerberus/**` (Static-Frontend). Static-Files werden beim naechsten Browser-Reload geladen; ein Server-Neustart ist nicht zwingend, aber sauber.
+
+**Doku-Updates Session #15:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-35 `OFFEN` → `ERLEDIGT — 2026-05-31 Session #15`.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #15 + B-035 `OFFEN` → `ERLEDIGT` (Kintsugi: Original-Item-Text bleibt).
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #15 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) Lesson **#Q35-test-js-behavior-via-node**.
+
+**Q-35-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #15`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 15/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 6/~10**). Naechste Session: Q-38 (B-060 Whisper Sentence-Repetition). Q-36 (B-033 Mobile-Audit) ggf. physisch-Test bei Chris; Q-37 (B-010 FAISS-Migration) BLOCKIERT auf Chris-`--execute`.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
