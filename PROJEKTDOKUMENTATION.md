@@ -1827,6 +1827,38 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-32 B-023 RAG-500er beim ersten Upload nach Clear (Tier 4, Session #11, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-32** (`B-023 RAG 500er beim ersten Upload nach Clear — Lazy-Load-Guard greift nicht immer`). Tier 4 drittes Item nach Q-31.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** Der Crash ist bereits durch zwei spaetere Patches geschlossen. Der Bug-Mechanismus: nach "Index leeren" (`_reset_sync` in [`zerberus/modules/rag/router.py`](../zerberus/modules/rag/router.py)) liegt der globale FAISS-Index als `faiss.IndexFlatL2(_DIM=384)` vor (Legacy-MiniLM-Dimension), bzw. `_en_index` bleibt `None`, wenn keine EN-Disk-Files existieren. Der erste Upload danach liefert per DualEmbedder aber DE=768- oder EN=1024-dimensionale Vektoren → `index.add(vec)` warf eine FAISS-`AssertionError` → HTTP 500 im `/admin/rag/upload`-Pfad. **P217** (Sprach-Routing: EN-Vektoren → `_en_index`, DE → `_index`, kein gemischter Slot) und **P218-pre** (Dim-Mismatch-Guard `if target_index is None or target_dim != incoming_dim: _reset_index_inplace(incoming_dim, ...)`, Z. 370 EN-Slot / Z. 391 DE-Slot) fangen BEIDE Ausfall-Modi ab — `None`-Index UND Dim-Mismatch — BEVOR `.add()` laeuft. Damit ist der Crash strukturell geschlossen.
+
+**Was fehlte (die eigentliche Q-32-Arbeit):** Die P218-pre-Tests pruefen `_add_to_index` nur ISOLIERT mit einem vor-gesetzten `_FakeIndex` — sie fuehren den `_reset_sync`-Clear-Schritt NICHT mit aus. Damit war nie bewiesen, dass die GANZE Sequenz Clear→erster-Upload sauber durchlaeuft. Genau dort lebte der Bug urspruenglich. Q-32 lieferte keinen Code-Fix (der Code ist korrekt), sondern die fehlende End-to-End-Test-Coverage (Kintsugi: Heilung sichtbar zementieren statt das Item wortlos abhaken).
+
+**Tests:** 7 neue Tests in [`zerberus/tests/test_q32_b023_upload_after_clear.py`](../zerberus/tests/test_q32_b023_upload_after_clear.py), 3 Bloecke:
+
+- `TestUploadAfterClearDual` (4): erster DE-Upload (768) nach Clear → Slot rebuildet, kein 500; erster EN-Upload (1024) nach Clear mit existierendem EN-Slot; erster EN-Upload mit `_en_index is None` (Kern von "Lazy-Load-Guard greift nicht immer"); gemischter DE+EN-Upload nach Clear ohne Cross-Reset (P217).
+- `TestUploadAfterClearLegacy` (1): Legacy-Modus, gleiche Dim (384/384), kein Mismatch, sauberer Add.
+- `TestSourceMarkers` (2): `_add_to_index` behaelt den `target_index is None`-Guard + ruft `_reset_index_inplace`; `_reset_sync` legt `_index` immer neu an (nie None).
+
+`_FakeIndex.add` baut FAISS' echtes Verhalten nach (`assert vec.shape[1] == self.d`) — greift der Guard bei einem kuenftigen Refactor nicht, wirft der Stub die AssertionError genau dort, wo Production HTTP 500 werfen wuerde. Der Test injiziert das `faiss`-Modul-Attribut via `patch.object(rag_router, "faiss", _fake_faiss(), create=True)` und ist damit faiss-unabhaengig — laeuft in der Sandbox (ohne natives `faiss`-Wheel) UND live. **7/7 gruen in 1.17s.**
+
+**Architektur-Hinweis (Lesson #Q32-test-the-full-sequence):** Ein "erster X nach Y/Clear/Reset"-Bug braucht einen Test, der Y REAL ausfuehrt und dann X — der gefaehrliche Zustand ist genau der, den der Reset hinterlaesst (`_index.d == 384` / `_en_index is None`). Wer X mit einem handgesetzten gueltigen Index testet, verfehlt den Bug. Zusatz: Tests, die ein optional-importiertes Modul (`try/except ImportError`) mocken, muessen das Modul-Attribut via `create=True` setzen, sonst koppeln sie ihre Lauffaehigkeit an die Installation der optionalen Dependency.
+
+**Doku-Updates Session #11:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-32 von `OFFEN` auf `ERLEDIGT — 2026-05-31 Session #11` mit voller Befund-Spiegelung.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #11 + B-023 `ERLEDIGT` mit file:line-Verweisen.
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #11 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) neue Lesson **#Q32-test-the-full-sequence**.
+
+**Voll-Suite-Stand Session #11:** Die Q-32-Sub-Suite ist faiss-unabhaengig (7/7 gruen). Die Voll-Suite-Zahlen aus Session #10 (5011 passed / 49 failed) wurden im Server-Env mit nativem `faiss`-Wheel gemessen; in der aktuellen Coding-Sandbox ist `faiss` nicht installiert, weshalb die FAISS-abhaengigen Tests (inkl. der bestehenden P217/P218-pre-Suiten) hier nicht lauffaehig sind. Die Q-32-Tests sind bewusst so geschrieben, dass sie diese Env-Abhaengigkeit NICHT teilen — sie laufen in beiden Umgebungen gruen. Erwartetes Voll-Suite-Delta im faiss-Env: **+7 passed / +0 failed**.
+
+**Q-32-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #11`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 12/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 3/~10**). Naechste Session: Q-33 (B-025 manuell getippter Text → DB-Speicherung verifizieren) oder Q-34 (B-031 Hel RAG-Tab Dokumentenliste gruppiert) oder Q-35 (B-035 Hel-Metriken Glaettungs-Toggle — Synergie mit Q-31 pruefen).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
