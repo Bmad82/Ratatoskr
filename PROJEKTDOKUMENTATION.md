@@ -1889,6 +1889,33 @@ Echte In-Memory-Async-SQLite (Fixture-Pattern aus der Block-B-Suite), laeuft `st
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-34 B-031 Hel RAG-Tab Dokumentenliste gruppiert (Tier 4, Session #14, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-34** (`B-031 Hel RAG-Tab: Dokumentenliste gruppiert anzeigen — eine Zeile pro Dokument mit Chunk-Anzahl`, SUPERVISOR Item 6). Tier 4 fuenftes Item nach Q-33.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** Der gruppierte Pfad ist intakt — auf BEIDEN Seiten. **Backend** `rag_documents` ([`zerberus/app/routers/hel.py:2860`](../zerberus/app/routers/hel.py)) gruppiert die FAISS-Metadata nach `source`, zaehlt `chunk_count`, summiert `total_words`, schliesst soft-deleted Chunks aus und aggregiert DE + EN bei Dual-Index (P217), liefert zusaetzlich `total_documents`/`total_chunks`. **Frontend** `loadRagStatus` ([`zerberus/static/js/hel-main.js:1508`](../zerberus/static/js/hel-main.js)) holt `/hel/admin/rag/documents` und rendert per `docs.map(doc => …)` eine `rag-doc-card` pro Dokument (Source + Kategorie-Badge + `chunk_count` Chunk(s) + `total_words` Woerter + Loeschen-Button) plus die Gesamt-Zeile `X Dokument(e), Y Chunk(s) gesamt`. Der gruppierte Render existiert mind. seit der Frontend-Separation `cec3a76` (2026-05-20, vorher inline in `hel.py`). **Die alte Q-02-Inventur-TEILWEISE-Notiz ("gruppierte Frontend-View fehlt") war ungenau** — sie sah nur das Backend-`chunk_count` und uebersah den bestehenden gruppierten Render. Kein Code-Fix noetig.
+
+**Was fehlte (die eigentliche Q-34-Arbeit):** Test-Coverage, die das gruppierte Verhalten gegen Drift zementiert — analog Q-33 (Lesson #Q33-verify-is-coverage-debt, zweite Instanz). Das Backend-Grouping war isoliert in test_patch169/test_p217 angetestet (Lazy-Init + DE/EN-Aggregation), aber der Frontend-Render hatte gar keine Coverage; ein Refactor auf eine flache Chunk-Liste oder der Verlust der Gesamt-Zeile waere unbemerkt durchgegangen.
+
+**Tests:** 8 neue Tests in [`zerberus/tests/test_q34_b031_rag_documents_grouped.py`](../zerberus/tests/test_q34_b031_rag_documents_grouped.py), 2 Bloecke:
+
+- `TestRagDocumentsGroupingBehavior` (4): Chunks derselben Source kollabieren zu 1 Dokument (chunk_count + total_words korrekt summiert); soft-deleted Chunks ausgeschlossen; DE+EN-Dual-Index aggregiert beide Sprachen (Admin sieht reine EN-Quellen); Response traegt die Gesamt-Felder fuer die Frontend-Zeile.
+- `TestRagTabGroupedFrontendRender` (4 Source-Audit via `read_combined_hel_source`): `loadRagStatus` nutzt den gruppierten Endpoint; rendert per `docs.map` eine Karte pro Dokument (nicht pro Chunk); zeigt `chunk_count` + `total_words`; behaelt die Gesamt-Zeile (`Chunk(s) gesamt`).
+
+**8/8 gruen.** Anti-Drift: bestehende RAG-Dokument-Suiten test_patch169 + test_p217 zusammen **43/43 gruen**. Kein Code unter `zerberus/**` ausser der neuen Test-Datei → kein Auto-Restart-Hook noetig.
+
+**Doku-Updates Session #14:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-34 `OFFEN` → `ERLEDIGT — 2026-05-31 Session #14`.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #14 + B-031 `ERLEDIGT` + Kintsugi-Korrektur der alten TEILWEISE-Notiz.
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #14 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) Lesson **#Q33-verify-is-coverage-debt** zweite Instanz vermerkt.
+
+**Q-34-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #14`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 14/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 5/~10**). Naechste Session: Q-35 (B-035 Hel-Metriken Glaettungs-Toggle — Synergie mit Q-31) oder Q-38 (B-060 Whisper Sentence-Repetition). Q-36 (B-033 Mobile-Audit) ggf. physisch-Test bei Chris; Q-37 (B-010 FAISS-Migration) BLOCKIERT auf Chris-`--execute`.
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
