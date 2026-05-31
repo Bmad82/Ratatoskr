@@ -1734,6 +1734,57 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-30 B-020 Kostendelta letzter Prompt (Tier 4, Session #9, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-30** (`B-020 Kostendelta letzter Prompt: balance_vorher - balance_jetzt berechnen, im Hel-Tab unter "Heute gesamt" als zusaetzliche Zeile anzeigen`). Tier-4-Einstieg nach Tier-3-Abschluss in Session #8.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** B-020 war im Code NICHT abgedeckt. Q-11 (Session #5) capturet zwar `data.id` (Generation-ID) in der `costs`-Tabelle und schreibt `last_cost` aus dem `X-Credits-Used`-Header, aber der `/api/v1/generation/{id}`-Nachzug ist NICHT verdrahtet und `last_cost` ist die Header-Approximation, nicht das authoritative Balance-Delta. Q-30 muss damit echt neu implementiert werden.
+
+**Implementation (Filesystem-State + reine Helpers + 3-Branch-Endpoint-Wiring):**
+
+1. **`data/balance_history.json` als Filesystem-State** (analog zu Q-11's `cost_reset_baseline.json`). Atomar geschrieben via tmp + `Path.replace`. Persistenz ueberlebt einen DB-Connect-Fehler, ist trivial zu backup-pen, ist eindeutige Single-Source-of-Truth.
+
+2. **Helpers in [`zerberus/app/routers/hel.py`](../zerberus/app/routers/hel.py)** direkt vor `_get_today_total_cost`:
+   - `_q30_read_prev_balance()` — graceful default `{"prev_balance_usd": None, "seen_at": None}` bei missing/corrupt file (WARN-Log auf `logger`).
+   - `_q30_write_prev_balance(balance_usd, seen_at_iso)` — atomares Write (tmp + replace), legt `data/` an falls fehlt.
+   - `_q30_compute_delta(prev, current)` — reine Funktion, 5 Status-Werte: `unavailable` (current None), `first_call` (prev None), `top_up_detected` (current > prev), `same` (current == prev), `ok` (current < prev, delta = `prev - current`).
+   - `_q30_attach_delta(response, current_balance_usd, usd_to_eur)` — liest prev, rechnet Delta, schreibt prev NUR wenn `current_balance_usd is not None` (**Lesson #Q30-no-clobber**), haengt `cost_delta_usd`/`cost_delta_eur`/`cost_delta_status`/`cost_delta_prev_balance_usd`/`cost_delta_prev_seen_at` an die Response.
+
+3. **`/admin/balance` Wiring** in allen drei Branches (Success + `httpx.HTTPStatusError` + generic Exception) ruft `_q30_attach_delta(response, balance|None, usd_to_eur)`. Im Erfolgsfall mit dem soeben gelesenen Balance, in Fehler-Branches mit `None` — der Endpoint liefert dann `cost_delta_status: "unavailable"`, ohne den letzten guten Wert zu zerstoeren.
+
+4. **Frontend [`zerberus/static/js/hel-main.js`](../zerberus/static/js/hel-main.js)** — `loadModelsAndBalance()` rendert eine `Δ Letzter Poll`-Zeile unter `Heute gesamt`, mit ehrlichen Status-Texten statt Null-Luege: `ok` → EUR-Betrag mit Komma-Format, `same` → "kein Verbrauch", `first_call` → "Baseline gesetzt", `top_up_detected` → "Top-Up erkannt, Baseline neu", `unavailable` → "Balance nicht abrufbar". Lesson R-00-honesty (Hel-UI muss zeigen, *warum* ein Wert leer ist) gilt auch hier.
+
+**Architektur-Entscheidungen (warum so):**
+
+1. **Polling-Delta statt `/generation/{id}`-Nachzug.** B-020 hat den polling-Ansatz explizit benannt. Der alternative `/api/v1/generation/{id}`-Nachzug (per Q-11 `data.id`-Capture vorbereitet) waere authoritative-per-Prompt, aber teurer (zusaetzlicher API-Call pro Anfrage) und mit Latenz-Risiko (OpenRouter braucht ein paar Sekunden, bis das Generation-Objekt komplett ist). Der polling-Delta ist die pragmatische Naeherung, und seine Status-Texte (insb. `top_up_detected`) machen Edge-Cases sichtbar statt versteckt zu verfaelschen.
+2. **Filesystem-State statt DB-Tabelle.** Analog zu Q-11's `cost_reset_baseline.json`. Vorteile: ueberlebt DB-Connect-Fehler, trivial zu backuppen, eindeutige Single-Source-of-Truth.
+3. **5 Status-Werte statt einfach None.** Macht das UI ehrlich statt eine Null-Luege zu zeigen.
+4. **Prev nur ueberschreiben wenn current bekannt.** Lesson #Q30-no-clobber: bei HTTP-Fehler oder Netz-Down darf der letzte gute Wert NICHT ueberschrieben werden — sonst waere der naechste echte Poll wieder `first_call`. Das ist nicht nur eine Anzeige-Luge, das ist Daten-Verlust.
+
+**Tests:** 23 neue Tests in [`zerberus/tests/test_q30_balance_delta.py`](../zerberus/tests/test_q30_balance_delta.py), 5 Klassen:
+
+- `TestQ30Helpers` (5): read-default-missing, write+read round-trip, read-default-corrupt mit WARN-Assert, read-default-wrong-type, write-creates-data-dir.
+- `TestQ30ComputeDelta` (7): alle Edge-Cases (None+None, None+val, val+None, equal, current>prev, current<prev, invalid types).
+- `TestQ30EndpointFields` (3): alle drei `/admin/balance`-Branches haben die `cost_delta_*`-Felder.
+- `TestQ30EndpointBehaviour` (5): first_call, second_call mit positive delta, top_up_detected, unavailable-no-clobber, EUR via dynamic-fx-rate.
+- `TestQ30SourceMarkers` (3): Q-30-Marker im hel.py + hel-main.js, `_q30_attach_delta` 3x im `get_balance`-Body.
+
+23/23 gruen in Isolation. Voll-Suite: 4 Failures in `TestQ30EndpointBehaviour` (first_call/second_call/top_up/eur_fx) durch das Pre-existing-Pattern der Q-10/Q-11-Voll-Suite-Failures (httpx-AsyncClient-Monkeypatch wird von frueher laufenden Tests unterminiert — Session #8 HANDOVER listet Q-10/Q-11 explizit als Pre-existing).
+
+**Doku-Updates Session #9:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-30 von `OFFEN` auf `ERLEDIGT — 2026-05-31 Session #9` mit voller Befund-Spiegelung.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #9 + B-020 `ERLEDIGT` mit file:line-Verweisen.
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #9 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) neue Lesson **#Q30-no-clobber** zur State-Persistenz-Regel.
+
+**Voll-Suite-Stand Session #9:** **4991 passed / 49 failed / 4 skipped / 131 deselected / 4 xfailed** in ~3:04 min (mit `--ignore=test_huginn_voice.py` analog Session #8). Delta gegen Session #8 (4988 passed / 45 failed): +3 passed, +4 failed. Die 4 neuen Failures sind alle `TestQ30EndpointBehaviour`-Subset und matchen exakt das Pre-existing-Pattern der Q-10/Q-11-Voll-Suite-Failures.
+
+**Q-30-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #9`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 10/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 1/~10**). Naechste Session: Q-31 (B-021 BERT-Sentiment-Daempfung pruefen — Drift-Verdacht) oder Q-32 (B-023 RAG-500er beim ersten Upload nach Clear) oder Q-33 (B-025 manuell getippter Text → DB-Speicherung).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
