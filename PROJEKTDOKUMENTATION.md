@@ -1785,6 +1785,48 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-31 B-021 BERT-Sentiment-Glaettung (Tier 4, Session #10, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-31** (`B-021 BERT/Sentiment springt zwischen Extremen — nur maximale Ausschlaege, Normalisierungsfehler in oliverguhr/german-sentiment-bert pruefen`). Tier 4 zweites Item nach Q-30.
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** Patch 85 hatte zwar eine Daempfung in `_compute_sentiment` eingefuehrt (`0.3 + 0.7 * (score - 0.5) / 0.5`), aber diese glaettete nur den Spitzenwert des Argmax-Labels. Das BERT-Modell `oliverguhr/german-sentiment-bert` antwortet bimodal (entweder `neutral` mit Konfidenz nahe 1.0 ODER `positive`/`negative` mit Konfidenz nahe 1.0); die beiden niedrigeren Klassen-Wahrscheinlichkeiten wurden weggeworfen. Resultat: der Compound war faktisch nur Patch-85-skalierte ±1/0-Trinoarisierung — die Sprung-Charakteristik blieb sichtbar. Q-31 muss damit auf die Verteilungs-Information umstellen, nicht nur den Argmax-Wert nachglaetten.
+
+**Implementation (top_k=None im Router + Compound-Caller + Backwards-Compat-Fallback):**
+
+1. **Router-Erweiterung in [`zerberus/modules/sentiment/router.py`](../zerberus/modules/sentiment/router.py).** HF-Pipeline-Aufruf wechselt auf `_pipeline(text[:512], top_k=None)` — das zwingt die `text-classification`-Pipeline, ALLE drei Klassen-Wahrscheinlichkeiten zu liefern statt nur die Top-Klasse. Output-Normalisierung deckt beide HF-Shapes ab: `[[{l,s},…]]` (geschachtelt, default modern) und `[{l,s},…]` (flach, alternative Form). Argmax-Label wird intern aus dem `scores`-Dict berechnet; Backwards-Compat-Felder `label` + `score` bleiben unveraendert.
+2. **Neue Felder im Return-Dict.** `analyze_sentiment` liefert jetzt zusaetzlich `scores: {"positive": float, "neutral": float, "negative": float}` — alle drei Wahrscheinlichkeiten der HF-Pipeline. Helper `_q31_neutral_scores()` (1/3 je Klasse) wird vom Fallback-Pfad (Modell nicht geladen, `_BERT_OK=False`) und vom Exception-Pfad zurueckgegeben — damit der Caller homogen rechnen kann (Compound = 0.0 ohne extra None-Pfad).
+3. **Caller-Umstellung in [`zerberus/core/database.py`](../zerberus/core/database.py).** `_compute_sentiment` rechnet bei vorhandenem `scores`-Dict den glatten Compound `P(positive) - P(negative)` (Bereich [-1.0, +1.0], geclipped gegen numerische Drift). Backwards-Compat: ohne `scores`-Key bleibt die Patch-85-Daempfung auf max-Klasse aktiv — schuetzt bestehende Test-Mocks mit altem Dict-Shape vor stillen Wert-Drifts.
+
+**Architektur-Entscheidungen (warum so):**
+
+1. **Verteilung statt Argmax.** Bei bimodal antwortenden Klassifikatoren ist der Argmax-Wert ein schlechter Proxy fuer Konfidenz. Der Compound aus der ganzen Verteilung glaettet automatisch (siehe Beispiel: `scores={pos:0.1, neu:0.85, neg:0.05}` → compound = 0.05 statt ein gedaempftes 0/1).
+2. **Backwards-Compat per Shape-Check, nicht per Version-Flag.** Statt eines globalen `Q31_ENABLED`-Flags prueft der Caller einfach, ob `scores` im Dict vorhanden ist. Schoener: kein Toggle-Bedarf, neue + alte Tests funktionieren parallel, Refactor-Aufwand fuer andere Caller (chat_pipeline, nala, legacy, orchestrator, overnight, sentiment_display) ist NULL — die nutzen weiter `label`+`score` direkt.
+3. **Neutral-Verteilung 1/3 statt None.** Der Router liefert IMMER `scores`, auch wenn das Modell down ist. Damit muss `_compute_sentiment` keinen Sonderfall fuer "scores fehlt waehrend Modell down" haben — der 1/3-Vektor ergibt natuerlich compound = 0.0.
+
+**Tests:** 20 neue Tests in [`zerberus/tests/test_q31_bert_sentiment_smoothing.py`](../zerberus/tests/test_q31_bert_sentiment_smoothing.py), 4 Bloecke:
+
+- `TestQ31RouterScoresShape` (3): `_q31_neutral_scores`-Uniformitaet, Modell-nicht-geladen-Fallback, Pipeline-Exception-Fallback.
+- `TestQ31RouterPipelineNormalization` (4): geschachtelte HF-Output-Form, flache HF-Output-Form, unerwarteter Shape → graceful Fallback, Argmax-Label aus Scores.
+- `TestQ31ComputeSentimentCompound` (6): starkes Positiv, starkes Negativ, neutral-dominant smoothing, bimodal pos/neg Cancellation, uniform-third → 0, Clipping auf [-1, +1].
+- `TestQ31BackwardsCompatibility` (4): Legacy-positive nutzt Patch-85-Damper, Legacy-neutral → 0, Legacy-negative voll, Router-Exception → 0.
+- `TestQ31SourceMarkers` (3): Q-31-Marker in Router + Database, scores-Key im Docstring.
+
+**20/20 gruen in Isolation.** 202/202 Sentiment-relevanten Tests gruppiert (B-075, Whisper-Input-Skip, Triptychon, Ambient, db_helpers + Q-31) gruen — kein Drift in den Patch-85-Tests in `test_db_helpers.py::TestComputeSentiment` (die mocken mit altem Shape und fallen in den Backwards-Compat-Pfad).
+
+**Doku-Updates Session #10:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-31 von `OFFEN` auf `ERLEDIGT — 2026-05-31 Session #10` mit voller Befund-Spiegelung.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #10 + B-021 `ERLEDIGT` mit file:line-Verweisen.
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #10 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) neue Lesson **#Q31-distribution-over-argmax** zur Klassifikator-Glaettungs-Regel.
+
+**Voll-Suite-Stand Session #10:** **5011 passed / 49 failed / 4 skipped / 131 deselected / 4 xfailed** in ~3:10 min (mit `--ignore=test_huginn_voice.py` analog Session #8/#9). Delta gegen Session #9 (4991 passed / 49 failed): **+20 passed / +0 failed**. Alle 20 neuen Q-31-Tests laufen auch in der Voll-Suite gruen — keine Drift, keine neuen Pre-existing-Pattern-Failures.
+
+**Q-31-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #10`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 11/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 2/~10**). Naechste Session: Q-32 (B-023 RAG-500er beim ersten Upload nach Clear — Lazy-Load-Guard greift nicht immer) oder Q-33 (B-025 manuell getippter Text → DB-Speicherung verifizieren) oder Q-34 (B-031 Hel RAG-Tab Dokumentenliste gruppiert).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
