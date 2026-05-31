@@ -1859,6 +1859,34 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 ---
 
+### FR 2026-05-30 Master-Roadmap — Q-33 B-025 manuell getippter Text → DB-Speicherung (Tier 4, Session #12, STATUS: IN_ARBEIT)
+
+**Auftrag (Master-Queue Tier 4 — Backlog-Restbestand):** **Q-33** (`B-025 Manuell getippter Text → DB-Speicherung verifizieren`, SUPERVISOR Item 1). Tier 4 viertes Item nach Q-32. Der Auftrag ist ein VERIFY, kein Bugfix: wird der manuell im Nala-Chat getippte Text noch persistiert — oder hat B-013/Patch 115 (Memory-Extraction) den Pfad verdraengt?
+
+**Befund (R-INV-2 — Pre-Item-Code-Pruefung):** Der Pfad ist intakt. Manuell getippter Chat-Text geht POST `/v1/chat/completions` → [`zerberus/app/routers/legacy.py:204`](../zerberus/app/routers/legacy.py) (`chat_completions`) → `_chat_completions_body` ([`zerberus/core/chat_pipeline.py`](../zerberus/core/chat_pipeline.py)). Dort wird die User-Eingabe UNBEDINGT per `store_interaction("user", last_user_msg, …)` gespeichert — im Patch-203d-2-Block ("User-Insert frueh, Eingabe ist endgueltig", Z. 1297), VOR dem Sandbox-Roundtrip, damit Chris' Eingabe auch dann persistiert wird, wenn spaetere Stages scheitern. `store_interaction` ([`zerberus/core/database.py:584`](../zerberus/core/database.py)) nimmt role="user" an, berechnet Sentiment (ein Float — NICHT `None` wie beim whisper_input-Diagnose-Skip) und Metriken (`compute_metrics`-Branch laeuft fuer role != whisper_input), committet die `interactions`-Row. **B-013/Patch 115 Memory-Extraction** ([`zerberus/modules/memory/extractor.py`](../zerberus/modules/memory/extractor.py)) liest die `interactions`-Tabelle NACHTRAEGlich (Overnight-Cron) und faengt den Insert NICHT ab — keine Drift. Verifiziert per direktem `Read` (R-INV-2: Subagent-Befund ist Hypothese, gegen den Code geprueft). Kein Code-Fix noetig.
+
+**Was fehlte (die eigentliche Q-33-Arbeit):** Eine Test-Coverage, die zementiert, dass getippter User-Text bis in die DB durchlaeuft. Genau dort lebt das Drift-Risiko — wuerde der unbedingte User-Insert kuenftig hinter einen Skip-Flag rutschen (analog whisper_input) oder durch die Memory-Extraction umgeleitet, ginge Chris' getippte Eingabe still verloren. Analog Q-32 (Kintsugi: Heilung sichtbar zementieren).
+
+**Tests:** 9 neue Tests in [`zerberus/tests/test_q33_b025_manual_text_db_storage.py`](../zerberus/tests/test_q33_b025_manual_text_db_storage.py), 3 Bloecke:
+
+- `TestManualTypedTextPersisted` (3): getippter Text landet als genau 1 Row mit role="user", VERBATIM-Content, korrektem word_count + profile_key; Sentiment ist ein Float (≠ None, Abgrenzung zum whisper_input-Skip); eine `message_metrics`-Row entsteht.
+- `TestManualTextDedup` (3): P113a-Dedup auf dem manuellen Pfad — identischer Text in derselben Session innerhalb 30s → 1 Row; abweichender Text → 2 Rows (Anti-Over-Suppression); gleicher Text in zwei Sessions → 2 Rows (session-scoped).
+- `TestChatPipelineUserInsertSource` (3): Source-Audit gegen Drift — der unbedingte `store_interaction("user", last_user_msg, …)`-Call existiert, steht NICHT hinter einer whisper_input-Bedingung, und der Patch-203d-2-Marker ist im Source verankert.
+
+Echte In-Memory-Async-SQLite (Fixture-Pattern aus der Block-B-Suite), laeuft `store_interaction` bis ans Funktionsende durch (KEIN Sentinel-Abbruch, Lesson #Q32-test-the-full-sequence). Sentiment-Spy verhindert echten BERT-Lazy-Load. **9/9 gruen in 3.93s.** Kein Drift in der Block-B-Suite (12/12 gruen).
+
+**Doku-Updates Session #12:**
+
+- [`MARATHON_WORKFLOW_ZERBERUS.md`](../MARATHON_WORKFLOW_ZERBERUS.md) Master-Queue Tier 4: Q-33 von `OFFEN` auf `ERLEDIGT — 2026-05-31 Session #12` mit voller Befund-Spiegelung.
+- [`BACKLOG_ZERBERUS.md`](../BACKLOG_ZERBERUS.md) Stand-Header auf Session #12 + B-025 `ERLEDIGT` mit file:line-Verweisen.
+- [`HANDOVER_ZERBERUS.md`](../HANDOVER_ZERBERUS.md) Session #12 Record.
+- [`mjolnir.md`](../mjolnir.md) STATUS-Header + Session-Status.
+- [`lessons_ZERBERUS.md`](../lessons_ZERBERUS.md) neue Lesson **#Q33-verify-is-coverage-debt**.
+
+**Q-33-Status in Master-Queue:** `ERLEDIGT — 2026-05-31 Session #12`. FR `STATUS: IN_ARBEIT` bleibt — Master-Queue 13/~25 erledigt (Tier 1+2+3 komplett, **Tier 4 4/~10**). Naechste Session: Q-34 (B-031 Hel RAG-Tab Dokumentenliste gruppiert) oder Q-35 (B-035 Hel-Metriken Glaettungs-Toggle — Synergie mit Q-31) oder Q-38 (B-060 Whisper Sentence-Repetition).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
