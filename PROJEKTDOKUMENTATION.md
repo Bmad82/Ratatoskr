@@ -1622,9 +1622,11 @@ Die alten 6 Block-B-Tests (Sentinel-basiert) bleiben (Kintsugi-Pflicht, dienen w
 
 **Code-Aenderungen:** [`zerberus/app/routers/hel.py:395-566`](zerberus/app/routers/hel.py:395) (Balance-Endpoint umgebaut), [`zerberus/static/js/hel-main.js:600-615`](zerberus/static/js/hel-main.js:600) (Hint-Rendering), [`zerberus/tests/test_q10_management_key.py`](zerberus/tests/test_q10_management_key.py) (neu, 15 Tests). Auto-Restart-Hook (`scripts/deploy_to_live.ps1`) triggert wegen `zerberus/**`-Touch.
 
-**Was Chris noch tun muss:** `OPENROUTER_MANAGEMENT_KEY` in der `.env` setzen (Provisioning-Key aus OpenRouter Dashboard -> Keys -> "Create Provisioning Key"). Bis dahin zeigt das Hel-UI den `balance_hint` mit dem Klartext-Hinweis statt eines leeren Kontostandes.
+**Was Chris noch tun muss:** ~~`OPENROUTER_MANAGEMENT_KEY` in der `.env` setzen~~ — siehe Q-10-NACHTRAG unten: NICHTS noetig.
 
-**Q-10-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #4`. FR `STATUS: IN_ARBEIT` bleibt, Q-11 (Hel-/CodeCat-Kosten + Diagramm) als Naechstes in Tier 2.
+**Q-10-NACHTRAG (Session #13 — 2026-05-31, Kintsugi-Korrektur):** Per echtem httpx-Call gegen die Live-API verifiziert (NICHT curl/Terminal an Chris delegiert — OBERSTES GEBOT): der normale `OPENROUTER_API_KEY` liefert `/api/v1/credits` HTTP 200 (`total_credits=145`, `total_usage=92.76` → Balance ≈ 52.24 USD). Ein Management-/Provisioning-Key ist **NICHT noetig** — die urspruengliche Q-10-Annahme "falscher Key-Typ" (aus CODECAT_INVENTUR Block D-2 ungeprueft uebernommen) war falsch; der einzige echte Bug war das `except: pass` (Block D-3), das Q-10 korrekt behoben hat. Code-Korrektur in [`zerberus/app/routers/hel.py:416-490`](zerberus/app/routers/hel.py): `creds_key = mgmt_key or api_key`, `/credits` wird immer mit dem normalen Key gerufen, `OPENROUTER_MANAGEMENT_KEY` ist nur noch optionaler Override (Kintsugi: Code + Tests bleiben). `balance_source`-Enum: `missing_management_key` entfaellt, `management_credits_empty/_failed` → `credits_empty`/`credits_failed`, neuer Default `credits`. Tests 15/15 gruen. Lesson **R-INV-2b**.
+
+**Q-10-Status in Master-Queue:** `ERLEDIGT — 2026-05-30 Session #4` (Root-Cause per NACHTRAG 2026-05-31 verifiziert/korrigiert). FR `STATUS: IN_ARBEIT` bleibt.
 
 ---
 
