@@ -1965,6 +1965,22 @@ Echte In-Memory-Async-SQLite (Fixture-Pattern aus der Block-B-Suite), laeuft `st
 
 ---
 
+### FR Bildarchiv + Bild-Upload-Bugfix (P-FR-Bildarchiv, 2026-06-07, STATUS: FERTIG)
+
+**Auftrag (Top-Prio vor allen Phase-5b-Items):** Bildarchiv + Bild-Upload-Bugfix für Nala/Hel — Vorbereitung Side-Urlaub 2026. Vier Schritte in EINER Coding-Session laut Atomaritäts-OVERRIDE (ein Commit pro Schritt, ein Sammel-HANDOVER am Session-Ende).
+
+**Schritt 0 ([IMGFIX]) — Nala Bild+Text gemeinsam senden:** Bisher schickte der Bild-Upload das Bild sofort, ohne Begleittext. Neu: das Bild wird als Thumbnail-Preview (max 80px, 44px-Touch-Targets, mobile-first) im `.input-area` angeheftet, Text bleibt eingebbar, der Senden-Button schickt Bild+Text zusammen (`POST /nala/image` mit `prompt`), X-Button entfernt das angeheftete Bild, Senden-ohne-Text schickt nur das Bild, immer nur ein Bild gleichzeitig. Files: [`nala.py`](../zerberus/app/routers/nala.py) (Preview-Bar), [`nala.css`](../zerberus/static/css/nala.css) (`.image-preview-*`), [`nala-main.js`](../zerberus/static/js/nala-main.js) (`_pendingImage`/`renderImagePreview`/`clearPendingImage`/`sendImageMessage`). Tests: [`test_imgfix_attach_then_send.py`](../zerberus/tests/test_imgfix_attach_then_send.py) (14).
+
+**Schritt 1a ([IMGARCHIVE]) — Auto-Vision-Beschreibung beim Projekt-Bild-Upload:** Bild-Upload (MIME jpeg/png/webp/gif, Endung als Fallback) erzeugt automatisch eine deutsche Vision-Beschreibung (OpenRouter via vorhandenem `analyze_image`, fester Prompt ohne Namen), legt sie als `<sha>_beschreibung.txt` neben den SHA-Bytes ab (inhalts-adressiert, über Projekte dedup-geteilt), persistiert sie in der NEUEN Spalte `project_files.vision_description` (graceful `ALTER TABLE` in `init_db` mit PRAGMA-Guard — Bestandsdaten bleiben erhalten, Altzeilen NULL) und indexiert sie als EINEN RAG-Chunk (`source="image:<relative_path>"`, `chunk_type="vision_description"`, idempotent per `file_id`). **Best-Effort:** Vision-Ausfall (down/Timeout/kein Key) bricht den Upload NICHT ab — Beschreibung bleibt NULL und ist nachholbar. Neue Datei [`projects_vision.py`](../zerberus/core/projects_vision.py); geänderte: [`database.py`](../zerberus/core/database.py), [`projects_repo.py`](../zerberus/core/projects_repo.py) (`set_vision_description`), [`projects_rag.py`](../zerberus/core/projects_rag.py) (`index_image_description`).
+
+**Schritt 1b — Bild-Katalog in Hel:** Dateiliste mit Thumbnails (`GET /admin/projects/{pid}/files/{fid}/raw`, volle Bytes, CSS begrenzt auf max 120px), Beschreibung unter dem Dateinamen (expandierbar), "Beschreibung neu generieren"-Button (`POST .../describe`, `force=True`) und "Nur Bilder"-Filter. Rendering ausgelagert nach `_renderProjectFilesList()` in [`hel-main.js`](../zerberus/static/js/hel-main.js); Endpoints in [`hel.py`](../zerberus/app/routers/hel.py).
+
+**Schritt 1c — Bild-Referenz im Chat:** RAG-Block markiert Bild-Treffer mit `📷 ... (Bild-Beschreibung)` (`format_rag_block`), damit das LLM weiß, dass ein ladbares Bild dahinter liegt. Explizites "zeig mir/schau dir an" → Bild-Reload an Vision ist dokumentierter Bonus für v2 (Beschreibung reicht für v1; kein Regress-Risiko auf dem Daily-Driver-Chat-Hotpath).
+
+**Tests + Abnahme:** [`test_imgarchive_vision_bridge.py`](../zerberus/tests/test_imgarchive_vision_bridge.py) (10, Vision-API + Embedder gemockt) + 14 IMGFIX-Tests grün; Regression-Sweep `nala/project/rag/phase5b/vision` grün (verbliebene 4 Failures in `test_p213_pre_2_dual_storage` + `test_rag_dual_switch` pre-existing, mit gestashten Änderungen identisch reproduziert → nicht von diesem FR berührt). Migration empirisch gegen Kopie der Live-`bunker_memory.db` + synthetisches Alt-Schema getraced. 3 pre-existing Doc-Audit-Failures (`test_p210` Stand-Anker ohne P-Form) als Nebeneffekt mitgefixt. **Live-Deploy triggert Auto-Restart** (Code unter `zerberus/**`).
+
+---
+
 ## 8. Aktueller Projektstatus
 
 ### Was funktioniert stabil
