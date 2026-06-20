@@ -10877,3 +10877,57 @@ Plus: 4 `node --check`-Tests umgestellt — vorher extrahierten sie per Regex di
 
 *Stand: 2026-05-30, FR 2026-05-30 Master-Roadmap Block A+B+C — STATUS: IN_ARBEIT (Master-Queue noch nicht leer). 12 neue Tests gruen. CodeCat-401-Fix LIVE (nach naechstem deploy_to_live-Sync). Dictate-Sentiment-Skip wieder dicht. Marathon-Auffuell-Regel auf 400k + Master-Queue verankert.*
 
+
+---
+
+## FR 2026-06-20 — Naechtliche Metrik-Auswertung ausgebaut (Tranche 1, modellfrei)
+
+**Auftrag.** Den naechtlichen Batch (bisher nur BERT-Sentiment + die Live-
+Lexikalik) Richtung grosser Metrik-Katalog ("glaeserner Mensch") ausbauen.
+Vorbedingung blockierend: saubere Auswertung (user-scoped, nur User-Input,
+stabile + dokumentierte Granularitaet) ZUERST, dann ausbauen. Details in
+`FR_2026_06_20_NIGHTLY_METRICS_EXPANSION.md`.
+
+**Neu (Pure-Python, kein Modell/GPU) — Spalten in `message_metrics`:** lexikalische
+Diversitaet `rttr`, `cttr`, `mattr_50`, `msttr_50`, `mtld`; Reichhaltigkeit
+`honore_r`, `simpson_d`; Haltung `self_ref_ratio`, `epistemic_ratio`,
+`negation_ratio`, `question_ratio`; Oberflaeche/Lesbarkeit `function_word_ratio`,
+`lexical_density`, `lix`, `avg_syllables_per_word`, `flesch_reading_ease_de`.
+Modul `zerberus/modules/metrics/extended.py`. Laengen-Floors: Diversitaet erst
+ab 25 Tokens (sonst `None`), Oberflaeche ab 3 — kein Rauschen aus kurzen
+Whisper-Fragmenten. Spaeter: spaCy-Metriken (Satz-/Clause-Laenge, Subordination,
+Dependency-Distance, Nominalisierung) und GPU-Land (Semantic Drift, Topic-Modeling,
+Perplexitaet) — bewusst NICHT in Tranche 1.
+
+**Vorbedingung hergestellt.** (1) *nur User-Input*: Backfill `WHERE i.role='user'`
+— assistant/whisper_input bleiben unberuehrt (in `message_metrics` physisch
+vorhanden, weil der Live-`compute_metrics` fuer beide Rollen schreibt; alle
+Metrik-Reader filtern aber `role='user'`). (2) *user-scoped*: pro `message_id`
+gespeichert (traegt `profile_key`), Backfill loggt pro User getrennt, Read
+`GET /hel/metrics/extended?profile_key=…` filtert auf einen User — nie quer
+gemittelt (Chris != Jojo). (3) *Granularitaet*: Vertrag festgeschrieben — eine
+Metrik-Zeile = eine User-Interaction-Zeile = eine Nachricht, identisch ueber
+Live-/Overnight-/Display-Pfad.
+
+**Lauf.** `run_overnight_sentiment` (04:30) ruft nach Dedup `backfill_extended_metrics()`
+ueber die GANZE Historie (langer Lauf, DB ist gut gefuellt). Idempotenz via
+Marker `ext_metrics_computed_at` (Zeitstempel = fertig, `skipped:encrypted` =
+Ciphertext ohne Key → kein Re-Try, kein Garbage). E-11: vor Berechnung
+entschluesseln, ohne Key ueberspringen. Manuell: `POST /hel/metrics/extended/backfill`
+`{"max_rows":N}` mit DB-Backup vorab (kein Write ohne Backup), rein additiv
+(Kintsugi: messen, nicht ueberschreiben). Config-Gate `modules.metrics.overnight_extended_enabled`
+(Default an) + `…overnight_extended_max_rows` (0 = unbegrenzt).
+
+**13.06-Stilbruch (beilaeufiger Befund).** Knick in den laengen-sensiblen
+Metrik-Kurven vermutlich aus geaenderter Eintragslaenge: Dictate-Fastlane wurde
+am 13.–14.06 stateless (`d37ef6b` "Diktat-Revision nicht mehr in History
+persistieren" + Endpunkt-Split `797ce21`/`2a07180`). Vorher schrieb der Lektor
+jede Diktat-Revision in wachsende Sessions, danach nicht mehr — geaenderte
+Eintragslaenge, nicht geaendertes Nutzerverhalten. MTLD/MATTR/RTTR/CTTR sind
+genau gegen solche Regime-Wechsel laengen-robust.
+
+**Tests.** `zerberus/tests/test_fr_2026_06_20_extended_metrics.py` — 23 gruen
+(Metrik-Werte/Floors + Backfill-Scoping auf Temp-SQLite: nur User-Input,
+user-scoped, idempotent, max_rows, mm-Insert, verschluesselte Zeile uebersprungen).
+
+*Stand: 2026-06-20, FR 2026-06-20 — erledigt. Backend live nach naechstem deploy_to_live-Sync. Manueller Backfill-Anstoss via Hel-Endpunkt verfuegbar.*
